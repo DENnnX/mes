@@ -26,7 +26,7 @@ import java.util.*;
  * - 应用包 JSON 导入 / 导出
  * - 在线模型草稿维护、自动生成三件套默认视图 (buildDefaultViews)
  * - 变更影响分析 (checkImpact)、显式发布 (publish) 与 DDL 同步、兼容回滚 (rollback)
- * - 模型受控下线 (offline)、数据导出凭据签发、异人双审永久清除 (applyPurge -> confirmPurge)
+ * - 模型受控下线 (offline)、数据导出凭据签发、管理员确认永久清除 (applyPurge -> confirmPurge)
  */
 @Service
 public class MetaGovernanceAppService {
@@ -599,7 +599,7 @@ public class MetaGovernanceAppService {
     }
 
     /**
-     * 独立管理员终审确认清除：强制校验 confirmBy != applyBy 且二次复查四大守卫。
+     * 系统管理员确认执行永久清除：校验申请单状态并二次复查安全守卫。
      */
     @Transactional(rollbackFor = Exception.class)
     public PurgeAudit confirmPurge(String applyId) {
@@ -609,7 +609,7 @@ public class MetaGovernanceAppService {
                 .orElseThrow(() -> DomainException.invalidParams("目标模型不存在: " + apply.getModelName()));
 
         String adminId = currentUserId();
-        apply.confirmBy(adminId, nowStr()); // 校验 applyBy != confirmBy
+        apply.confirmBy(adminId, nowStr());
         verifyPurgeGuards(agg, apply.getExportTicket());
 
         long count = agg.getActiveVersionId() != null

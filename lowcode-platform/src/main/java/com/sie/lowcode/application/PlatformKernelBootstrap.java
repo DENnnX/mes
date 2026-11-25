@@ -11,7 +11,7 @@ import java.util.*;
 
 /**
  * 平台内核自举引导器：
- * 1) 注册内置 RBAC 角色与用户账号（供开发/发布/管理双人互斥及日常体验使用）；
+ * 1) 注册内置 RBAC 角色与默认账号（仅保留默认系统管理员 admin 与示例业务用户 user）；
  * 2) 注册纯平台自举元数据（仅平台自身治理所需模型，不包含任何硬编码业务示例）；
  * 3) 在 ExtensionRegistry 中挂载引擎自举服务重写链（ui_menu.loadMenu / ui_view.loadView / rbac_user.login 等）。
  */
@@ -72,7 +72,7 @@ public class PlatformKernelBootstrap {
             com.sie.lowcode.domain.iam.RoleDef adminRole = new com.sie.lowcode.domain.iam.RoleDef();
             adminRole.setId("role_admin");
             adminRole.setCode("ROLE_ADMIN");
-            adminRole.setName("平台管理员 (超级权限/独立清除终审)");
+            adminRole.setName("系统管理员 (全量管理/建模发布/安全清理权限)");
             adminRole.setDataScope("ALL");
             adminRole.setAllowedServices(Set.of("*"));
             iamAppService.saveRole(adminRole);
@@ -108,9 +108,7 @@ public class PlatformKernelBootstrap {
 
         if (iamAppService.listUsers().isEmpty()) {
             createUser("usr_admin", "admin", "系统管理员 (Admin)", "123456", Set.of("ROLE_ADMIN", "ROLE_DEVELOPER", "ROLE_PUBLISHER"));
-            createUser("usr_dev", "developer", "开发者 (Developer)", "123456", Set.of("ROLE_DEVELOPER", "ROLE_PUBLISHER"));
-            createUser("usr_admin2", "auditor", "独立审查管理员 (Auditor)", "123456", Set.of("ROLE_ADMIN"));
-            createUser("usr_app", "user", "业务应用用户 (AppUser)", "123456", Set.of("ROLE_APP_USER"));
+            createUser("usr_app", "user", "示例业务用户 (User)", "123456", Set.of("ROLE_APP_USER"));
         }
     }
 

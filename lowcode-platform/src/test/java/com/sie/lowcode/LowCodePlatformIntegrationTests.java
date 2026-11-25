@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * 低代码平台全链路集成测试：
  * 验证通用元模型引擎、JSON-RPC 2.0 协议、Filter DSL、ManyToOne/OneToMany 级联、
- * Groovy 脚本扩展与事务回滚、声明式状态机、版本影响检查/兼容退役/回滚、RBAC 与双人互斥清除治理。
+ * Groovy 脚本扩展与事务回滚、声明式状态机、版本影响检查/兼容退役/回滚、RBAC 与受控安全清理治理。
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -107,15 +107,15 @@ public class LowCodePlatformIntegrationTests {
         Map<String, Object> unauth = rpcCall(null, "ui_menu", "loadMenu", null);
         requireError(unauth, -32001);
 
-        // 登录 developer / auditor / user 账号
-        Map<String, Object> devLogin = requireResult(rpcCall(null, "rbac_user", "login",
-                Map.of("username", "developer", "password", "123456")));
-        devToken = (String) devLogin.get("token");
-        assertThat(devToken).isNotBlank();
+        // 验证初始默认账号仅保留 admin 与 user，不初始化 developer / auditor
+        requireError(rpcCall(null, "rbac_user", "login", Map.of("username", "developer", "password", "123456")), -32001);
+        requireError(rpcCall(null, "rbac_user", "login", Map.of("username", "auditor", "password", "123456")), -32001);
 
-        Map<String, Object> auditorLogin = requireResult(rpcCall(null, "rbac_user", "login",
-                Map.of("username", "auditor", "password", "123456")));
-        adminToken = (String) auditorLogin.get("token");
+        // 登录统一系统管理员 admin（含全部管理、建模、发布与安全清理权限）与示例 user 账号
+        Map<String, Object> adminLogin = requireResult(rpcCall(null, "rbac_user", "login",
+                Map.of("username", "admin", "password", "123456")));
+        adminToken = (String) adminLogin.get("token");
+        devToken = adminToken;
         assertThat(adminToken).isNotBlank();
 
         Map<String, Object> userLogin = requireResult(rpcCall(null, "rbac_user", "login",
@@ -404,14 +404,9 @@ public class LowCodePlatformIntegrationTests {
     @Test
     @Order(5)
     @SuppressWarnings("unchecked")
-    void testOfflineAndDualReviewPurgeGovernance() {
-        // 登录全权限 admin 用于验证“同账号既发起又终审”双人互斥拦截 (-32004)
-        Map<String, Object> adminSelfLogin = requireResult(rpcCall(null, "rbac_user", "login",
-                Map.of("username", "admin", "password", "123456")));
-        String superAdminToken = (String) adminSelfLogin.get("token");
-
+    void testOfflineAndControlledPurgeGovernance() {
         // 1. 下线 test_task 模型 -> 动态菜单自动隐藏 + 普通运行时 RPC 被阻断 (-32003)
-        requireResult(rpcCall(devToken, "meta_model", "offline", Map.of("modelName", "test_task")));
+        requireResult(rpcCall(adminToken, "meta_model", "offline", Map.of("modelName", "test_task")));
         requireError(rpcCall(userToken, "test_task", "search", Map.of("filter", Collections.emptyList())), -32003);
 
         List<Map<String, Object>> menusWhileOffline = requireResult(rpcCall(userToken, "ui_menu", "loadMenu", null));
@@ -419,55 +414,53 @@ public class LowCodePlatformIntegrationTests {
         assertThat(children).extracting(m -> m.get("model")).doesNotContain("test_task");
 
         // 2. 无导出凭据直接申请清除 -> 守卫阻断 (-32003)
-        requireError(rpcCall(devToken, "meta_model", "applyPurge",
+        requireError(rpcCall(adminToken, "meta_model", "applyPurge",
                 Map.of("modelName", "test_task", "exportTicket", "FAKE_TICKET")), -32003);
 
-        // 3. 先清除依赖子表 test_task_item（顺带验证 admin 发起后不可自我确认 -32004）
-        requireResult(rpcCall(devToken, "meta_model", "offline", Map.of("modelName", "test_task_item")));
-        Map<String, Object> expItem = requireResult(rpcCall(devToken, "meta_model", "exportData",
+        // 3. 先清除依赖子表 test_task_item：由统一 admin 直接申请并确认清理
+        requireResult(rpcCall(adminToken, "meta_model", "offline", Map.of("modelName", "test_task_item")));
+        Map<String, Object> expItem = requireResult(rpcCall(adminToken, "meta_model", "exportData",
                 Map.of("modelName", "test_task_item")));
-        Map<String, Object> applyItem = requireResult(rpcCall(superAdminToken, "meta_model", "applyPurge",
+        Map<String, Object> applyItem = requireResult(rpcCall(adminToken, "meta_model", "applyPurge",
                 Map.of("modelName", "test_task_item", "exportTicket", expItem.get("exportTicket"))));
         String applyItemId = (String) applyItem.get("id");
-        // 同身份 admin 既是发起人又有 ROLE_ADMIN -> 触发双人互斥异常 (-32004)
-        requireError(rpcCall(superAdminToken, "meta_model", "confirmPurge", Map.of("applyId", applyItemId)), -32004);
-        // 由独立审查员 auditor 完成确认清除
         requireResult(rpcCall(adminToken, "meta_model", "confirmPurge", Map.of("applyId", applyItemId)));
 
         // 4. 导出 test_task 数据获取有效凭据
-        Map<String, Object> exp = requireResult(rpcCall(devToken, "meta_model", "exportData",
+        Map<String, Object> exp = requireResult(rpcCall(adminToken, "meta_model", "exportData",
                 Map.of("modelName", "test_task")));
         String exportTicket = (String) exp.get("exportTicket");
         assertThat(((Number) exp.get("recordCount")).intValue()).isEqualTo(2);
 
         // 存在未清理业务数据时守卫阻断，必须先清理测试数据
-        requireError(rpcCall(devToken, "meta_model", "applyPurge",
+        requireError(rpcCall(adminToken, "meta_model", "applyPurge",
                 Map.of("modelName", "test_task", "exportTicket", exportTicket)), -32003);
 
         // 临时上线删除业务记录后再下线，完成合规清理链路
-        requireResult(rpcCall(devToken, "meta_model", "online", Map.of("modelName", "test_task")));
+        requireResult(rpcCall(adminToken, "meta_model", "online", Map.of("modelName", "test_task")));
         Map<String, Object> allRows = requireResult(rpcCall(userToken, "test_task", "search", Map.of("filter", Collections.emptyList())));
         List<String> allIds = ((List<Map<String, Object>>) allRows.get("records")).stream()
                 .map(r -> (String) r.get("id")).toList();
-        requireResult(rpcCall(devToken, "test_task", "delete", Map.of("ids", allIds)));
-        requireResult(rpcCall(devToken, "meta_model", "offline", Map.of("modelName", "test_task")));
+        requireResult(rpcCall(adminToken, "test_task", "delete", Map.of("ids", allIds)));
+        requireResult(rpcCall(adminToken, "meta_model", "offline", Map.of("modelName", "test_task")));
 
-        // developer 发起清除申请
-        Map<String, Object> apply = requireResult(rpcCall(devToken, "meta_model", "applyPurge",
+        // admin 发起清除申请
+        Map<String, Object> apply = requireResult(rpcCall(adminToken, "meta_model", "applyPurge",
                 Map.of("modelName", "test_task", "exportTicket", exportTicket)));
         String applyId = (String) apply.get("id");
 
-        // developer 无 ROLE_ADMIN 权限 -> -32001
-        requireError(rpcCall(devToken, "meta_model", "confirmPurge", Map.of("applyId", applyId)), -32001);
+        // 普通业务用户 user 无 ROLE_ADMIN 权限 -> -32001
+        requireError(rpcCall(userToken, "meta_model", "confirmPurge", Map.of("applyId", applyId)), -32001);
 
-        // 由独立审查员 auditor 确认清除
+        // 统一系统管理员 admin 直接确认完成清除
         Map<String, Object> audit = requireResult(rpcCall(adminToken, "meta_model", "confirmPurge",
                 Map.of("applyId", applyId)));
         assertThat(audit.get("modelName")).isEqualTo("test_task");
-        assertThat(audit.get("applyBy")).isNotEqualTo(audit.get("confirmBy"));
+        assertThat(audit.get("applyBy")).isEqualTo("usr_admin");
+        assertThat(audit.get("confirmBy")).isEqualTo("usr_admin");
 
         // 清除后台账中不再存在 test_task，且审计记录保留
-        List<Map<String, Object>> remainingModels = requireResult(rpcCall(devToken, "meta_model", "listModels", null));
+        List<Map<String, Object>> remainingModels = requireResult(rpcCall(adminToken, "meta_model", "listModels", null));
         assertThat(remainingModels).extracting(m -> m.get("name")).doesNotContain("test_task");
         List<Map<String, Object>> audits = requireResult(rpcCall(adminToken, "meta_model", "listPurgeAudits", null));
         assertThat(audits).extracting(a -> a.get("modelName")).contains("test_task", "test_task_item");

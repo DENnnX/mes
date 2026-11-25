@@ -3,7 +3,7 @@ package com.sie.lowcode.domain.metamodel.model;
 import com.sie.lowcode.domain.shared.DomainException;
 
 /**
- * 永久清除申请聚合（meta_purge_apply），强制执行双人互斥终审不变性：applyBy != confirmBy。
+ * 永久清除申请聚合（meta_purge_apply），记录申请状态、审核时间与最终确认人。
  */
 public class PurgeApply {
     public enum Status {
@@ -22,11 +22,10 @@ public class PurgeApply {
 
     public void confirmBy(String adminUserId, String nowIso) {
         if (this.status != Status.PENDING) {
-            throw DomainException.stateGuardFailed("仅待审核申请可执行终审确认，当前状态: " + status);
+            throw DomainException.stateGuardFailed("仅待审核申请可执行确认清除，当前状态: " + status);
         }
-        if (adminUserId == null || adminUserId.equals(this.applyBy)) {
-            throw DomainException.dualReviewForbidden(
-                    "违反双人互斥原则：清除申请发起人 (" + applyBy + ") 严禁担任终审确认人！");
+        if (adminUserId == null || adminUserId.isBlank()) {
+            throw DomainException.permissionDenied("缺少执行清除确认的管理员身份");
         }
         this.confirmBy = adminUserId;
         this.confirmTime = nowIso;
