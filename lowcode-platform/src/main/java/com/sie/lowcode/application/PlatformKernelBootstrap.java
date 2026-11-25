@@ -1,6 +1,7 @@
 package com.sie.lowcode.application;
 
 import com.sie.lowcode.domain.metamodel.model.*;
+import com.sie.lowcode.domain.metamodel.repository.FoundationRepository;
 import com.sie.lowcode.domain.metamodel.repository.ModelRepository;
 import com.sie.lowcode.domain.shared.MetaContext;
 import com.sie.lowcode.infrastructure.container.MetaContainerMemoryRegistry;
@@ -23,25 +24,29 @@ public class PlatformKernelBootstrap {
     private final MetaContainerMemoryRegistry registry;
     private final ModelRepository modelRepo;
     private final UiSchemaRepository uiRepo;
+    private final FoundationRepository foundationRepo;
 
     public PlatformKernelBootstrap(IamAppService iamAppService,
                                    MetaGovernanceAppService govService,
                                    UiSchemaAppService uiService,
                                    MetaContainerMemoryRegistry registry,
                                    ModelRepository modelRepo,
-                                   UiSchemaRepository uiRepo) {
+                                   UiSchemaRepository uiRepo,
+                                   FoundationRepository foundationRepo) {
         this.iamAppService = iamAppService;
         this.govService = govService;
         this.uiService = uiService;
         this.registry = registry;
         this.modelRepo = modelRepo;
         this.uiRepo = uiRepo;
+        this.foundationRepo = foundationRepo;
     }
 
     @javax.annotation.PostConstruct
     public void bootstrap() {
         registry.reloadAll();
         seedIamRolesAndUsers();
+        seedDefaultDictionaries();
         seedKernelSelfHostingModels();
         registerPlatformExtensionHandlers();
         registry.reloadAll();
@@ -109,6 +114,57 @@ public class PlatformKernelBootstrap {
         if (iamAppService.listUsers().isEmpty()) {
             createUser("usr_admin", "admin", "系统管理员 (Admin)", "123456", Set.of("ROLE_ADMIN", "ROLE_DEVELOPER", "ROLE_PUBLISHER"));
             createUser("usr_app", "user", "示例业务用户 (User)", "123456", Set.of("ROLE_APP_USER"));
+        }
+    }
+
+    /** 初始化若干高频通用的示例选项字典，开箱即可在任意数据表字段中引用 */
+    private void seedDefaultDictionaries() {
+        if (!foundationRepo.findAllDictTypes(null).isEmpty()) {
+            return;
+        }
+        seedDict("SYS_URGENCY", "紧急程度", "适用于工单、任务与报修单优先级", List.of(
+                new String[]{"LOW", "普通", "info", "10"},
+                new String[]{"NORMAL", "加急", "warning", "20"},
+                new String[]{"URGENT", "特急", "danger", "30"}
+        ));
+        seedDict("SYS_APPROVAL_STATUS", "审批状态", "适用于单据通用审核流转状态展示", List.of(
+                new String[]{"DRAFT", "草稿", "info", "10"},
+                new String[]{"PENDING", "审批中", "warning", "20"},
+                new String[]{"APPROVED", "已通过", "success", "30"},
+                new String[]{"REJECTED", "已驳回", "danger", "40"}
+        ));
+        seedDict("SYS_QUALITY_RESULT", "检验结论", "适用于巡检、质检与验收判定结果", List.of(
+                new String[]{"PASS", "合格", "success", "10"},
+                new String[]{"RECHECK", "待复检", "warning", "20"},
+                new String[]{"FAIL", "不合格", "danger", "30"}
+        ));
+        seedDict("SYS_ENABLE_STATUS", "启用状态", "适用于基础档案启停标记", List.of(
+                new String[]{"ENABLED", "正常启用", "success", "10"},
+                new String[]{"DISABLED", "已停用", "info", "20"}
+        ));
+    }
+
+    private void seedDict(String code, String name, String remark, List<String[]> items) {
+        DictTypeDef type = new DictTypeDef();
+        type.setId("dt_" + code);
+        type.setTypeCode(code);
+        type.setName(name);
+        type.setRemark(remark);
+        type.setStatus("ACTIVE");
+        type.setTenantId(MetaContext.DEFAULT_TENANT);
+        foundationRepo.saveDictType(type);
+
+        for (String[] row : items) {
+            DictItemDef item = new DictItemDef();
+            item.setId("di_" + code.toLowerCase() + "_" + row[0].toLowerCase());
+            item.setTypeCode(code);
+            item.setItemValue(row[0]);
+            item.setItemLabel(row[1]);
+            item.setColor(row[2]);
+            item.setSequence(Integer.parseInt(row[3]));
+            item.setStatus("ACTIVE");
+            item.setTenantId(MetaContext.DEFAULT_TENANT);
+            foundationRepo.saveDictItem(item);
         }
     }
 

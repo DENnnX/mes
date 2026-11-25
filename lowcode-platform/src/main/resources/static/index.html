@@ -751,6 +751,8 @@
 
             <!-- Tab 5: 常用选项字典 -->
             <div v-if="studioTab === 'dict'">
+              <el-alert type="info" :closable="false" style="margin-bottom:12px;"
+                        title="用法：先在左侧选中或新建字典分类、右侧维护下拉选项；建数据表时给字段选择“数据字典下拉 (Dict)”即可直接选用。"></el-alert>
               <el-row :gutter="14">
                 <el-col :span="10">
                   <div class="lc-card">
@@ -1364,7 +1366,9 @@
                     <div v-else-if="row.dataType === 'OneToMany'" style="display:flex;gap:4px;">
                       <el-input v-model="row.relateModel" size="small" placeholder="明细表"></el-input><el-input v-model="row.inverseName" size="small" placeholder="关联字段"></el-input>
                     </div>
-                    <el-input v-else-if="row.dataType === 'Dict'" v-model="row.dictType" size="small" placeholder="字典调用编码"></el-input>
+                    <el-select v-else-if="row.dataType === 'Dict'" v-model="row.dictType" filterable allow-create default-first-option size="small" placeholder="选择字典" style="width:100%;">
+                      <el-option v-for="dt in dictTypes" :key="dt.typeCode" :value="dt.typeCode" :label="dt.name + ' (' + dt.typeCode + ')'"></el-option>
+                    </el-select>
                     <el-input v-else-if="row.dataType === 'Selection'" v-model="row._valuesCsv" size="small" placeholder="OPEN:待办,DONE:完成"></el-input>
                     <el-input v-else v-model="row.defaultValue" size="small" placeholder="默认值"></el-input>
                   </template>
@@ -2103,12 +2107,14 @@
         }
 
         function openNewModelDesigner() {
+          if (dictTypes.value.length === 0) loadDictTypes();
           designer.isEdit = false;
           const defaultApp = businessAppsOnly.value[0]?.name || 'custom_app';
           designer.snapshot = { name: '', displayName: '', appName: defaultApp, versionNo: '1.0.0', _parentsCsv: '', extendModel: '', abstractModel: false, orderBy: 'create_date desc', logicDelete: false, displayFormat: '', indexes: [], properties: [{ name: 'title', displayName: '名称', dataType: 'String', required: true, display: true, displayForModel: true, store: true }], services: [] };
           designer.visible = true;
         }
         async function openModelDesigner(modelName) {
+          if (dictTypes.value.length === 0) loadDictTypes();
           try {
             const detail = await rpcCall('meta_model', 'detail', { modelName });
             const activeId = detail.model?.activeVersionId;

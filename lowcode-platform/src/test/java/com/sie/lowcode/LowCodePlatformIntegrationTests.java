@@ -130,6 +130,14 @@ public class LowCodePlatformIntegrationTests {
         List<Map<String, Object>> models = requireResult(rpcCall(devToken, "meta_model", "listModels", null));
         assertThat(models).extracting(m -> m.get("name"))
                 .contains("meta_app", "meta_model", "meta_publish_record", "meta_purge_audit");
+
+        // 确认内置示例数据字典已开箱初始化
+        List<Map<String, Object>> defaultDicts = requireResult(rpcCall(adminToken, "meta_dict", "listTypes", null));
+        assertThat(defaultDicts).extracting(d -> d.get("typeCode"))
+                .contains("SYS_URGENCY", "SYS_APPROVAL_STATUS", "SYS_QUALITY_RESULT", "SYS_ENABLE_STATUS");
+        List<Map<String, Object>> urgencyItems = requireResult(rpcCall(userToken, "meta_dict", "itemsByType",
+                Map.of("typeCode", "SYS_URGENCY")));
+        assertThat(urgencyItems).extracting(i -> i.get("itemLabel")).containsExactly("普通", "加急", "特急");
     }
 
     @Test
