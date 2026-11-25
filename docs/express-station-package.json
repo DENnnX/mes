@@ -1,0 +1,3018 @@
+{
+  "app": {
+    "id": "express_station_app",
+    "name": "express_station_app",
+    "displayName": "快递站管理系统",
+    "category": "enterprise",
+    "version": "1.0.0",
+    "tag": "master",
+    "description": "涵盖货架区位档案、快递车批次签收、包裹入库与取件核验、超期保管费自动核算及异常问题件闭环处理。",
+    "dependencies": [],
+    "state": "INSTALLED",
+    "createUser": "usr_admin",
+    "createDate": "2026-11-25 22:46:44",
+    "updateDate": "2026-11-25 22:46:44"
+  },
+  "models": [
+    {
+      "name": "exp_shelf",
+      "displayName": "货架区位档案",
+      "appName": "express_station_app",
+      "tableName": null,
+      "description": null,
+      "versionNo": "1.0.0",
+      "parents": [],
+      "extendModel": null,
+      "abstractModel": false,
+      "autoLog": true,
+      "logicDelete": true,
+      "orderBy": "shelf_code asc",
+      "displayFormat": null,
+      "dataScope": "ALL",
+      "indexes": [],
+      "properties": [
+        {
+          "name": "shelf_code",
+          "columnName": null,
+          "displayName": "货架编码名称",
+          "description": null,
+          "tooltips": null,
+          "dataType": "String",
+          "length": null,
+          "scale": null,
+          "required": true,
+          "readonly": false,
+          "unique": true,
+          "store": true,
+          "display": true,
+          "displayForModel": true,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "zone_type",
+          "columnName": null,
+          "displayName": "所属分区",
+          "description": null,
+          "tooltips": null,
+          "dataType": "Selection",
+          "length": null,
+          "scale": null,
+          "required": true,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": "A",
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [
+            {
+              "label": "A区-标准小件柜",
+              "value": "A",
+              "color": "primary"
+            },
+            {
+              "label": "B区-中件货架",
+              "value": "B",
+              "color": "info"
+            },
+            {
+              "label": "C区-大件地堆区",
+              "value": "C",
+              "color": "warning"
+            },
+            {
+              "label": "D区-生鲜冷链柜",
+              "value": "D",
+              "color": "danger"
+            }
+          ],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "capacity",
+          "columnName": null,
+          "displayName": "容量上限(件)",
+          "description": null,
+          "tooltips": null,
+          "dataType": "Integer",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": 120,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "manager_name",
+          "columnName": null,
+          "displayName": "负责理货员",
+          "description": null,
+          "tooltips": null,
+          "dataType": "String",
+          "length": null,
+          "scale": null,
+          "required": true,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "status",
+          "columnName": null,
+          "displayName": "货架状态",
+          "description": null,
+          "tooltips": null,
+          "dataType": "Dict",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": "ENABLED",
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": "SYS_ENABLE_STATUS",
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        }
+      ],
+      "services": []
+    },
+    {
+      "name": "exp_inbound_batch",
+      "displayName": "快递车批次签收",
+      "appName": "express_station_app",
+      "tableName": null,
+      "description": null,
+      "versionNo": "1.0.1",
+      "parents": [],
+      "extendModel": null,
+      "abstractModel": false,
+      "autoLog": true,
+      "logicDelete": true,
+      "orderBy": "create_date desc",
+      "displayFormat": null,
+      "dataScope": "ALL",
+      "indexes": [],
+      "properties": [
+        {
+          "name": "batch_no",
+          "columnName": null,
+          "displayName": "签收批次号",
+          "description": null,
+          "tooltips": null,
+          "dataType": "String",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": true,
+          "unique": true,
+          "store": true,
+          "display": true,
+          "displayForModel": true,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": "EXP_BATCH",
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "courier_brand",
+          "columnName": null,
+          "displayName": "快递品牌",
+          "description": null,
+          "tooltips": null,
+          "dataType": "Dict",
+          "length": null,
+          "scale": null,
+          "required": true,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": "EXP_COMPANY",
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "driver_name",
+          "columnName": null,
+          "displayName": "派送司机/快递员",
+          "description": null,
+          "tooltips": null,
+          "dataType": "String",
+          "length": null,
+          "scale": null,
+          "required": true,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "arrive_time",
+          "columnName": null,
+          "displayName": "到站时间",
+          "description": null,
+          "tooltips": null,
+          "dataType": "DateTime",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "total_count",
+          "columnName": null,
+          "displayName": "随车件数",
+          "description": null,
+          "tooltips": null,
+          "dataType": "Integer",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": 0,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "status",
+          "columnName": null,
+          "displayName": "签收状态",
+          "description": null,
+          "tooltips": null,
+          "dataType": "Selection",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": "ARRIVED",
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [
+            {
+              "label": "待清点",
+              "value": "ARRIVED",
+              "color": "warning"
+            },
+            {
+              "label": "已清点入库",
+              "value": "CHECKED",
+              "color": "success"
+            }
+          ],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "details",
+          "columnName": null,
+          "displayName": "随车包裹明细",
+          "description": null,
+          "tooltips": null,
+          "dataType": "OneToMany",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": false,
+          "unique": false,
+          "store": false,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": "exp_inbound_detail",
+          "inverseName": "batch_id",
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        }
+      ],
+      "services": [
+        {
+          "name": "finishCheck",
+          "displayName": "完成到站清点",
+          "type": "STATE_TRANSITION",
+          "auth": "action",
+          "description": null,
+          "scriptContent": null,
+          "transitionRule": {
+            "statusField": "status",
+            "fromStates": [
+              "ARRIVED"
+            ],
+            "toState": "CHECKED",
+            "guardScript": null,
+            "updateFields": {},
+            "errorMessage": "该批次已完成清点！"
+          },
+          "paramsSchema": []
+        }
+      ]
+    },
+    {
+      "name": "exp_inbound_detail",
+      "displayName": "随车包裹明细",
+      "appName": "express_station_app",
+      "tableName": null,
+      "description": null,
+      "versionNo": "1.0.0",
+      "parents": [],
+      "extendModel": null,
+      "abstractModel": false,
+      "autoLog": true,
+      "logicDelete": false,
+      "orderBy": "create_date desc",
+      "displayFormat": null,
+      "dataScope": "ALL",
+      "indexes": [],
+      "properties": [
+        {
+          "name": "batch_id",
+          "columnName": null,
+          "displayName": "所属签收批次",
+          "description": null,
+          "tooltips": null,
+          "dataType": "ManyToOne",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": "exp_inbound_batch",
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "tracking_no",
+          "columnName": null,
+          "displayName": "随车运单号",
+          "description": null,
+          "tooltips": null,
+          "dataType": "String",
+          "length": null,
+          "scale": null,
+          "required": true,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": true,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "damaged",
+          "columnName": null,
+          "displayName": "包装破损",
+          "description": null,
+          "tooltips": null,
+          "dataType": "Boolean",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": false,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "note",
+          "columnName": null,
+          "displayName": "验视备注",
+          "description": null,
+          "tooltips": null,
+          "dataType": "String",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        }
+      ],
+      "services": []
+    },
+    {
+      "name": "exp_parcel",
+      "displayName": "包裹入库与取件",
+      "appName": "express_station_app",
+      "tableName": null,
+      "description": null,
+      "versionNo": "1.0.0",
+      "parents": [],
+      "extendModel": null,
+      "abstractModel": false,
+      "autoLog": true,
+      "logicDelete": true,
+      "orderBy": "create_date desc",
+      "displayFormat": null,
+      "dataScope": "ALL",
+      "indexes": [],
+      "properties": [
+        {
+          "name": "inbound_no",
+          "columnName": null,
+          "displayName": "入库流水号",
+          "description": null,
+          "tooltips": null,
+          "dataType": "String",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": true,
+          "unique": true,
+          "store": true,
+          "display": true,
+          "displayForModel": true,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": "EXP_INBOUND",
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "tracking_no",
+          "columnName": null,
+          "displayName": "快递运单号",
+          "description": null,
+          "tooltips": null,
+          "dataType": "String",
+          "length": null,
+          "scale": null,
+          "required": true,
+          "readonly": false,
+          "unique": true,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": 6,
+          "maxLength": 32,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "courier_brand",
+          "columnName": null,
+          "displayName": "快递品牌",
+          "description": null,
+          "tooltips": null,
+          "dataType": "Dict",
+          "length": null,
+          "scale": null,
+          "required": true,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": "EXP_COMPANY",
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "parcel_size",
+          "columnName": null,
+          "displayName": "快件规格",
+          "description": null,
+          "tooltips": null,
+          "dataType": "Dict",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": "SMALL",
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": "EXP_PARCEL_SIZE",
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "recipient_name",
+          "columnName": null,
+          "displayName": "收件人姓名",
+          "description": null,
+          "tooltips": null,
+          "dataType": "String",
+          "length": null,
+          "scale": null,
+          "required": true,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "recipient_phone",
+          "columnName": null,
+          "displayName": "收件人手机",
+          "description": null,
+          "tooltips": null,
+          "dataType": "String",
+          "length": null,
+          "scale": null,
+          "required": true,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": 11,
+          "maxLength": 11,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "pickup_code",
+          "columnName": null,
+          "displayName": "取件码",
+          "description": null,
+          "tooltips": null,
+          "dataType": "String",
+          "length": null,
+          "scale": null,
+          "required": true,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "shelf_id",
+          "columnName": null,
+          "displayName": "存放货架",
+          "description": null,
+          "tooltips": null,
+          "dataType": "ManyToOne",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": "exp_shelf",
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "shelf_manager",
+          "columnName": null,
+          "displayName": "货架理货员",
+          "description": null,
+          "tooltips": null,
+          "dataType": "String",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": false,
+          "unique": false,
+          "store": false,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": "shelf_id.manager_name",
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "storage_days",
+          "columnName": null,
+          "displayName": "滞留天数",
+          "description": null,
+          "tooltips": null,
+          "dataType": "Integer",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": 0,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "overdue_fee",
+          "columnName": null,
+          "displayName": "超期保管费(元)",
+          "description": null,
+          "tooltips": null,
+          "dataType": "Double",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": 0.0,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": "int d = ((row.storage_days ?: 0) as int); return d > 3 ? (d - 3) * 1.0d : 0.0d;",
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "status",
+          "columnName": null,
+          "displayName": "包裹状态",
+          "description": null,
+          "tooltips": null,
+          "dataType": "Selection",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": "PENDING",
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [
+            {
+              "label": "待上架",
+              "value": "PENDING",
+              "color": "info"
+            },
+            {
+              "label": "待取件",
+              "value": "READY",
+              "color": "primary"
+            },
+            {
+              "label": "已取走",
+              "value": "PICKED",
+              "color": "success"
+            },
+            {
+              "label": "异常滞留",
+              "value": "PROBLEM",
+              "color": "danger"
+            },
+            {
+              "label": "已退回",
+              "value": "RETURNED",
+              "color": "warning"
+            }
+          ],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "remark",
+          "columnName": null,
+          "displayName": "备注说明",
+          "description": null,
+          "tooltips": null,
+          "dataType": "Text",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        }
+      ],
+      "services": [
+        {
+          "name": "putOnShelf",
+          "displayName": "确认上架待取",
+          "type": "STATE_TRANSITION",
+          "auth": "action",
+          "description": null,
+          "scriptContent": null,
+          "transitionRule": {
+            "statusField": "status",
+            "fromStates": [
+              "PENDING"
+            ],
+            "toState": "READY",
+            "guardScript": null,
+            "updateFields": {},
+            "errorMessage": "只有“待上架”状态的包裹才能执行上架操作！"
+          },
+          "paramsSchema": []
+        },
+        {
+          "name": "confirmPickup",
+          "displayName": "核验取件出库",
+          "type": "STATE_TRANSITION",
+          "auth": "action",
+          "description": null,
+          "scriptContent": null,
+          "transitionRule": {
+            "statusField": "status",
+            "fromStates": [
+              "READY"
+            ],
+            "toState": "PICKED",
+            "guardScript": null,
+            "updateFields": {},
+            "errorMessage": "只有“待取件”状态的包裹才能核验出库！"
+          },
+          "paramsSchema": []
+        },
+        {
+          "name": "markProblem",
+          "displayName": "转为异常件",
+          "type": "STATE_TRANSITION",
+          "auth": "action",
+          "description": null,
+          "scriptContent": null,
+          "transitionRule": {
+            "statusField": "status",
+            "fromStates": [
+              "PENDING",
+              "READY"
+            ],
+            "toState": "PROBLEM",
+            "guardScript": null,
+            "updateFields": {},
+            "errorMessage": "当前状态不可转为异常滞留！"
+          },
+          "paramsSchema": []
+        },
+        {
+          "name": "returnSender",
+          "displayName": "退回寄件人",
+          "type": "STATE_TRANSITION",
+          "auth": "action",
+          "description": null,
+          "scriptContent": null,
+          "transitionRule": {
+            "statusField": "status",
+            "fromStates": [
+              "PROBLEM",
+              "READY"
+            ],
+            "toState": "RETURNED",
+            "guardScript": null,
+            "updateFields": {},
+            "errorMessage": "当前状态不可执行退件！"
+          },
+          "paramsSchema": []
+        },
+        {
+          "name": "recalcOverdueFee",
+          "displayName": "核算超期费",
+          "type": "GROOVY_SCRIPT",
+          "auth": "action",
+          "description": null,
+          "scriptContent": "int d = ((row.storage_days ?: 0) as int);\ndouble fee = d > 3 ? (d - 3) * 1.0d : 0.0d;\nrs.call('update', [id: row.id, version: row.version, values: [overdue_fee: fee]]);\nreturn JsonRpcServiceResponse.message('取件码 [' + (row.pickup_code ?: row.inbound_no) + '] 滞留 ' + d + ' 天，超期保管费：￥' + fee);",
+          "transitionRule": null,
+          "paramsSchema": []
+        }
+      ]
+    },
+    {
+      "name": "exp_problem_order",
+      "displayName": "问题件处理单",
+      "appName": "express_station_app",
+      "tableName": null,
+      "description": null,
+      "versionNo": "1.0.0",
+      "parents": [],
+      "extendModel": null,
+      "abstractModel": false,
+      "autoLog": true,
+      "logicDelete": true,
+      "orderBy": "create_date desc",
+      "displayFormat": null,
+      "dataScope": "ALL",
+      "indexes": [],
+      "properties": [
+        {
+          "name": "ticket_no",
+          "columnName": null,
+          "displayName": "工单号",
+          "description": null,
+          "tooltips": null,
+          "dataType": "String",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": true,
+          "unique": true,
+          "store": true,
+          "display": true,
+          "displayForModel": true,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": "EXP_PROBLEM",
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "parcel_id",
+          "columnName": null,
+          "displayName": "关联包裹",
+          "description": null,
+          "tooltips": null,
+          "dataType": "ManyToOne",
+          "length": null,
+          "scale": null,
+          "required": true,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": "exp_parcel",
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "urgency",
+          "columnName": null,
+          "displayName": "紧急程度",
+          "description": null,
+          "tooltips": null,
+          "dataType": "Dict",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": "NORMAL",
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": "SYS_URGENCY",
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "issue_desc",
+          "columnName": null,
+          "displayName": "异常描述",
+          "description": null,
+          "tooltips": null,
+          "dataType": "Text",
+          "length": null,
+          "scale": null,
+          "required": true,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "handle_result",
+          "columnName": null,
+          "displayName": "处理结论",
+          "description": null,
+          "tooltips": null,
+          "dataType": "Dict",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": "SYS_QUALITY_RESULT",
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "evidence_file",
+          "columnName": null,
+          "displayName": "破损拍照凭证",
+          "description": null,
+          "tooltips": null,
+          "dataType": "File",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": null,
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        },
+        {
+          "name": "status",
+          "columnName": null,
+          "displayName": "处理状态",
+          "description": null,
+          "tooltips": null,
+          "dataType": "Selection",
+          "length": null,
+          "scale": null,
+          "required": false,
+          "readonly": false,
+          "unique": false,
+          "store": true,
+          "display": true,
+          "displayForModel": false,
+          "defaultValue": "OPEN",
+          "defaultMethod": null,
+          "widget": null,
+          "format": null,
+          "dateFormat": null,
+          "values": [
+            {
+              "label": "待处理",
+              "value": "OPEN",
+              "color": "warning"
+            },
+            {
+              "label": "核查中",
+              "value": "PROCESSING",
+              "color": "primary"
+            },
+            {
+              "label": "已办结",
+              "value": "CLOSED",
+              "color": "success"
+            }
+          ],
+          "multiple": false,
+          "selectionMethod": null,
+          "dictType": null,
+          "related": null,
+          "computeMethod": null,
+          "computeScript": null,
+          "codeRule": null,
+          "relateModel": null,
+          "inverseName": null,
+          "onDelete": "RESTRICT",
+          "joinTable": null,
+          "joinColumn": null,
+          "inverseJoinColumn": null,
+          "minValue": null,
+          "maxValue": null,
+          "minLength": null,
+          "maxLength": null,
+          "email": false,
+          "validationRegex": null,
+          "validationMessage": null,
+          "contentType": null,
+          "autoColumn": false
+        }
+      ],
+      "services": [
+        {
+          "name": "startHandle",
+          "displayName": "受理核查",
+          "type": "STATE_TRANSITION",
+          "auth": "action",
+          "description": null,
+          "scriptContent": null,
+          "transitionRule": {
+            "statusField": "status",
+            "fromStates": [
+              "OPEN"
+            ],
+            "toState": "PROCESSING",
+            "guardScript": null,
+            "updateFields": {},
+            "errorMessage": "仅“待处理”工单可受理！"
+          },
+          "paramsSchema": []
+        },
+        {
+          "name": "closeTicket",
+          "displayName": "确认办结",
+          "type": "STATE_TRANSITION",
+          "auth": "action",
+          "description": null,
+          "scriptContent": null,
+          "transitionRule": {
+            "statusField": "status",
+            "fromStates": [
+              "PROCESSING"
+            ],
+            "toState": "CLOSED",
+            "guardScript": null,
+            "updateFields": {},
+            "errorMessage": "请先受理核查后再确认办结！"
+          },
+          "paramsSchema": []
+        }
+      ]
+    }
+  ],
+  "views": {
+    "exp_shelf_grid": {
+      "id": "exp_shelf_grid",
+      "key": "exp_shelf_grid",
+      "name": "货架区位档案-表格",
+      "model": "exp_shelf",
+      "type": "grid",
+      "mode": "primary",
+      "inheritFrom": null,
+      "priority": 10,
+      "active": true,
+      "body": {
+        "type": "grid",
+        "columns": [
+          {
+            "name": "shelf_code",
+            "displayName": "货架编码名称",
+            "sortable": true
+          },
+          {
+            "name": "zone_type",
+            "displayName": "所属分区",
+            "sortable": true,
+            "width": "120px"
+          },
+          {
+            "name": "capacity",
+            "displayName": "容量上限(件)",
+            "sortable": true
+          },
+          {
+            "name": "manager_name",
+            "displayName": "负责理货员",
+            "sortable": true
+          },
+          {
+            "name": "status",
+            "displayName": "货架状态",
+            "sortable": true,
+            "width": "120px"
+          }
+        ],
+        "tbar": [
+          {
+            "name": "新增",
+            "action": "create",
+            "auth": "create",
+            "type": "primary"
+          },
+          {
+            "name": "批量删除",
+            "action": "delete",
+            "auth": "delete",
+            "type": "danger",
+            "confirm": "确认删除选中记录？",
+            "args": {
+              "ids": "$selectedIds"
+            },
+            "actionAfter": "refreshTable"
+          }
+        ],
+        "buttons": [
+          {
+            "name": "详情",
+            "action": "preview",
+            "auth": "read",
+            "type": "default"
+          },
+          {
+            "name": "编辑",
+            "action": "edit",
+            "auth": "update",
+            "type": "primary"
+          },
+          {
+            "name": "删除",
+            "action": "delete",
+            "auth": "delete",
+            "type": "danger",
+            "confirm": "确认删除该记录？",
+            "args": {
+              "id": "$row.id"
+            },
+            "actionAfter": "refreshTable"
+          }
+        ]
+      }
+    },
+    "exp_shelf_search": {
+      "id": "exp_shelf_search",
+      "key": "exp_shelf_search",
+      "name": "货架区位档案-搜索",
+      "model": "exp_shelf",
+      "type": "search",
+      "mode": "primary",
+      "inheritFrom": null,
+      "priority": 10,
+      "active": true,
+      "body": {
+        "type": "search",
+        "columns": [
+          {
+            "name": "shelf_code",
+            "displayName": "货架编码名称"
+          },
+          {
+            "name": "zone_type",
+            "displayName": "所属分区"
+          },
+          {
+            "name": "capacity",
+            "displayName": "容量上限(件)"
+          },
+          {
+            "name": "manager_name",
+            "displayName": "负责理货员"
+          }
+        ]
+      }
+    },
+    "exp_shelf_form": {
+      "id": "exp_shelf_form",
+      "key": "exp_shelf_form",
+      "name": "货架区位档案-表单",
+      "model": "exp_shelf",
+      "type": "form",
+      "mode": "primary",
+      "inheritFrom": null,
+      "priority": 10,
+      "active": true,
+      "body": {
+        "type": "form",
+        "columns": [
+          {
+            "name": "shelf_code",
+            "displayName": "货架编码名称"
+          },
+          {
+            "name": "zone_type",
+            "displayName": "所属分区"
+          },
+          {
+            "name": "capacity",
+            "displayName": "容量上限(件)"
+          },
+          {
+            "name": "manager_name",
+            "displayName": "负责理货员"
+          },
+          {
+            "name": "status",
+            "displayName": "货架状态"
+          }
+        ],
+        "tabs": []
+      }
+    },
+    "exp_inbound_batch_grid": {
+      "id": "exp_inbound_batch_grid",
+      "key": "exp_inbound_batch_grid",
+      "name": "快递车批次签收-表格",
+      "model": "exp_inbound_batch",
+      "type": "grid",
+      "mode": "primary",
+      "inheritFrom": null,
+      "priority": 10,
+      "active": true,
+      "body": {
+        "type": "grid",
+        "columns": [
+          {
+            "name": "batch_no",
+            "displayName": "签收批次号",
+            "sortable": true
+          },
+          {
+            "name": "courier_brand",
+            "displayName": "快递品牌",
+            "sortable": true,
+            "width": "120px"
+          },
+          {
+            "name": "driver_name",
+            "displayName": "派送司机/快递员",
+            "sortable": true
+          },
+          {
+            "name": "arrive_time",
+            "displayName": "到站时间",
+            "sortable": true
+          },
+          {
+            "name": "total_count",
+            "displayName": "随车件数",
+            "sortable": true
+          },
+          {
+            "name": "status",
+            "displayName": "签收状态",
+            "sortable": true,
+            "width": "120px"
+          }
+        ],
+        "tbar": [
+          {
+            "name": "新增",
+            "action": "create",
+            "auth": "create",
+            "type": "primary"
+          },
+          {
+            "name": "批量删除",
+            "action": "delete",
+            "auth": "delete",
+            "type": "danger",
+            "confirm": "确认删除选中记录？",
+            "args": {
+              "ids": "$selectedIds"
+            },
+            "actionAfter": "refreshTable"
+          }
+        ],
+        "buttons": [
+          {
+            "name": "详情",
+            "action": "preview",
+            "auth": "read",
+            "type": "default"
+          },
+          {
+            "name": "编辑",
+            "action": "edit",
+            "auth": "update",
+            "type": "primary"
+          },
+          {
+            "name": "删除",
+            "action": "delete",
+            "auth": "delete",
+            "type": "danger",
+            "confirm": "确认删除该记录？",
+            "args": {
+              "id": "$row.id"
+            },
+            "actionAfter": "refreshTable"
+          },
+          {
+            "name": "完成到站清点",
+            "action": "custom",
+            "auth": "action",
+            "type": "success",
+            "service": "finishCheck",
+            "enableCondition": "['ARRIVED'].includes(row.status)",
+            "args": {
+              "id": "$row.id"
+            },
+            "actionAfter": "refreshTable"
+          }
+        ]
+      }
+    },
+    "exp_inbound_batch_search": {
+      "id": "exp_inbound_batch_search",
+      "key": "exp_inbound_batch_search",
+      "name": "快递车批次签收-搜索",
+      "model": "exp_inbound_batch",
+      "type": "search",
+      "mode": "primary",
+      "inheritFrom": null,
+      "priority": 10,
+      "active": true,
+      "body": {
+        "type": "search",
+        "columns": [
+          {
+            "name": "batch_no",
+            "displayName": "签收批次号"
+          },
+          {
+            "name": "courier_brand",
+            "displayName": "快递品牌"
+          },
+          {
+            "name": "driver_name",
+            "displayName": "派送司机/快递员"
+          },
+          {
+            "name": "arrive_time",
+            "displayName": "到站时间"
+          }
+        ]
+      }
+    },
+    "exp_inbound_batch_form": {
+      "id": "exp_inbound_batch_form",
+      "key": "exp_inbound_batch_form",
+      "name": "快递车批次签收-表单",
+      "model": "exp_inbound_batch",
+      "type": "form",
+      "mode": "primary",
+      "inheritFrom": null,
+      "priority": 10,
+      "active": true,
+      "body": {
+        "type": "form",
+        "columns": [
+          {
+            "name": "batch_no",
+            "displayName": "签收批次号"
+          },
+          {
+            "name": "courier_brand",
+            "displayName": "快递品牌"
+          },
+          {
+            "name": "driver_name",
+            "displayName": "派送司机/快递员"
+          },
+          {
+            "name": "arrive_time",
+            "displayName": "到站时间"
+          },
+          {
+            "name": "total_count",
+            "displayName": "随车件数"
+          },
+          {
+            "name": "status",
+            "displayName": "签收状态"
+          }
+        ],
+        "tabs": [
+          {
+            "header": "随车包裹明细",
+            "body": {
+              "type": "grid,form",
+              "field": "details",
+              "relateModel": "exp_inbound_detail",
+              "inverseName": "batch_id",
+              "columns": [
+                {
+                  "name": "tracking_no",
+                  "displayName": "随车运单号"
+                },
+                {
+                  "name": "damaged",
+                  "displayName": "包装破损"
+                },
+                {
+                  "name": "note",
+                  "displayName": "验视备注"
+                }
+              ],
+              "edit": {
+                "columns": [
+                  {
+                    "name": "tracking_no",
+                    "displayName": "随车运单号"
+                  },
+                  {
+                    "name": "damaged",
+                    "displayName": "包装破损"
+                  },
+                  {
+                    "name": "note",
+                    "displayName": "验视备注"
+                  }
+                ],
+                "type": "form"
+              }
+            },
+            "tbar": [
+              {
+                "name": "添加明细",
+                "action": "createEr",
+                "auth": "create",
+                "type": "primary"
+              },
+              {
+                "name": "删除明细",
+                "action": "deleteEr",
+                "auth": "delete",
+                "type": "danger"
+              }
+            ],
+            "buttons": [
+              {
+                "name": "编辑",
+                "action": "updateEr",
+                "auth": "update",
+                "type": "primary"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "exp_inbound_detail_grid": {
+      "id": "exp_inbound_detail_grid",
+      "key": "exp_inbound_detail_grid",
+      "name": "随车包裹明细-表格",
+      "model": "exp_inbound_detail",
+      "type": "grid",
+      "mode": "primary",
+      "inheritFrom": null,
+      "priority": 10,
+      "active": true,
+      "body": {
+        "type": "grid",
+        "columns": [
+          {
+            "name": "batch_id",
+            "displayName": "所属签收批次",
+            "sortable": true
+          },
+          {
+            "name": "tracking_no",
+            "displayName": "随车运单号",
+            "sortable": true
+          },
+          {
+            "name": "damaged",
+            "displayName": "包装破损",
+            "sortable": true,
+            "width": "120px"
+          },
+          {
+            "name": "note",
+            "displayName": "验视备注",
+            "sortable": true
+          }
+        ],
+        "tbar": [
+          {
+            "name": "新增",
+            "action": "create",
+            "auth": "create",
+            "type": "primary"
+          },
+          {
+            "name": "批量删除",
+            "action": "delete",
+            "auth": "delete",
+            "type": "danger",
+            "confirm": "确认删除选中记录？",
+            "args": {
+              "ids": "$selectedIds"
+            },
+            "actionAfter": "refreshTable"
+          }
+        ],
+        "buttons": [
+          {
+            "name": "详情",
+            "action": "preview",
+            "auth": "read",
+            "type": "default"
+          },
+          {
+            "name": "编辑",
+            "action": "edit",
+            "auth": "update",
+            "type": "primary"
+          },
+          {
+            "name": "删除",
+            "action": "delete",
+            "auth": "delete",
+            "type": "danger",
+            "confirm": "确认删除该记录？",
+            "args": {
+              "id": "$row.id"
+            },
+            "actionAfter": "refreshTable"
+          }
+        ]
+      }
+    },
+    "exp_inbound_detail_search": {
+      "id": "exp_inbound_detail_search",
+      "key": "exp_inbound_detail_search",
+      "name": "随车包裹明细-搜索",
+      "model": "exp_inbound_detail",
+      "type": "search",
+      "mode": "primary",
+      "inheritFrom": null,
+      "priority": 10,
+      "active": true,
+      "body": {
+        "type": "search",
+        "columns": [
+          {
+            "name": "batch_id",
+            "displayName": "所属签收批次"
+          },
+          {
+            "name": "tracking_no",
+            "displayName": "随车运单号"
+          },
+          {
+            "name": "damaged",
+            "displayName": "包装破损"
+          },
+          {
+            "name": "note",
+            "displayName": "验视备注"
+          }
+        ]
+      }
+    },
+    "exp_inbound_detail_form": {
+      "id": "exp_inbound_detail_form",
+      "key": "exp_inbound_detail_form",
+      "name": "随车包裹明细-表单",
+      "model": "exp_inbound_detail",
+      "type": "form",
+      "mode": "primary",
+      "inheritFrom": null,
+      "priority": 10,
+      "active": true,
+      "body": {
+        "type": "form",
+        "columns": [
+          {
+            "name": "batch_id",
+            "displayName": "所属签收批次"
+          },
+          {
+            "name": "tracking_no",
+            "displayName": "随车运单号"
+          },
+          {
+            "name": "damaged",
+            "displayName": "包装破损"
+          },
+          {
+            "name": "note",
+            "displayName": "验视备注"
+          }
+        ],
+        "tabs": []
+      }
+    },
+    "exp_parcel_grid": {
+      "id": "exp_parcel_grid",
+      "key": "exp_parcel_grid",
+      "name": "包裹入库与取件-表格",
+      "model": "exp_parcel",
+      "type": "grid",
+      "mode": "primary",
+      "inheritFrom": null,
+      "priority": 10,
+      "active": true,
+      "body": {
+        "type": "grid",
+        "columns": [
+          {
+            "name": "inbound_no",
+            "displayName": "入库流水号",
+            "sortable": true,
+            "width": "165px"
+          },
+          {
+            "name": "tracking_no",
+            "displayName": "快递运单号",
+            "sortable": true,
+            "width": "145px"
+          },
+          {
+            "name": "courier_brand",
+            "displayName": "快递品牌",
+            "sortable": true,
+            "width": "105px"
+          },
+          {
+            "name": "recipient_name",
+            "displayName": "收件人姓名",
+            "sortable": true,
+            "width": "95px"
+          },
+          {
+            "name": "recipient_phone",
+            "displayName": "收件人手机",
+            "sortable": true,
+            "width": "120px"
+          },
+          {
+            "name": "pickup_code",
+            "displayName": "取件码",
+            "sortable": true,
+            "width": "100px"
+          },
+          {
+            "name": "shelf_id",
+            "displayName": "存放货架",
+            "sortable": true,
+            "width": "135px"
+          },
+          {
+            "name": "storage_days",
+            "displayName": "滞留天数",
+            "sortable": true,
+            "width": "88px"
+          },
+          {
+            "name": "overdue_fee",
+            "displayName": "超期保管费(元)",
+            "sortable": true,
+            "width": "110px"
+          },
+          {
+            "name": "status",
+            "displayName": "包裹状态",
+            "sortable": true,
+            "width": "98px"
+          }
+        ],
+        "tbar": [
+          {
+            "name": "新增",
+            "action": "create",
+            "auth": "create",
+            "type": "primary"
+          },
+          {
+            "name": "批量删除",
+            "action": "delete",
+            "auth": "delete",
+            "type": "danger",
+            "confirm": "确认删除选中记录？",
+            "args": {
+              "ids": "$selectedIds"
+            },
+            "actionAfter": "refreshTable"
+          }
+        ],
+        "buttons": [
+          {
+            "name": "详情",
+            "action": "preview",
+            "auth": "read",
+            "type": "default"
+          },
+          {
+            "name": "编辑",
+            "action": "edit",
+            "auth": "update",
+            "type": "primary"
+          },
+          {
+            "name": "删除",
+            "action": "delete",
+            "auth": "delete",
+            "type": "danger",
+            "confirm": "确认删除该记录？",
+            "args": {
+              "id": "$row.id"
+            },
+            "actionAfter": "refreshTable"
+          },
+          {
+            "name": "确认上架待取",
+            "action": "custom",
+            "auth": "action",
+            "type": "success",
+            "service": "putOnShelf",
+            "enableCondition": "['PENDING'].includes(row.status)",
+            "args": {
+              "id": "$row.id"
+            },
+            "actionAfter": "refreshTable"
+          },
+          {
+            "name": "核验取件出库",
+            "action": "custom",
+            "auth": "action",
+            "type": "success",
+            "service": "confirmPickup",
+            "enableCondition": "['READY'].includes(row.status)",
+            "args": {
+              "id": "$row.id"
+            },
+            "actionAfter": "refreshTable"
+          },
+          {
+            "name": "转为异常件",
+            "action": "custom",
+            "auth": "action",
+            "type": "success",
+            "service": "markProblem",
+            "enableCondition": "['PENDING','READY'].includes(row.status)",
+            "args": {
+              "id": "$row.id"
+            },
+            "actionAfter": "refreshTable"
+          },
+          {
+            "name": "退回寄件人",
+            "action": "custom",
+            "auth": "action",
+            "type": "success",
+            "service": "returnSender",
+            "enableCondition": "['PROBLEM','READY'].includes(row.status)",
+            "args": {
+              "id": "$row.id"
+            },
+            "actionAfter": "refreshTable"
+          },
+          {
+            "name": "核算超期费",
+            "action": "custom",
+            "auth": "action",
+            "type": "success",
+            "service": "recalcOverdueFee",
+            "args": {
+              "id": "$row.id"
+            },
+            "actionAfter": "refreshTable"
+          }
+        ]
+      }
+    },
+    "exp_parcel_search": {
+      "id": "exp_parcel_search",
+      "key": "exp_parcel_search",
+      "name": "包裹入库与取件-搜索",
+      "model": "exp_parcel",
+      "type": "search",
+      "mode": "primary",
+      "inheritFrom": null,
+      "priority": 10,
+      "active": true,
+      "body": {
+        "type": "search",
+        "columns": [
+          {
+            "name": "inbound_no",
+            "displayName": "入库流水号"
+          },
+          {
+            "name": "tracking_no",
+            "displayName": "快递运单号"
+          },
+          {
+            "name": "courier_brand",
+            "displayName": "快递品牌"
+          },
+          {
+            "name": "parcel_size",
+            "displayName": "快件规格"
+          }
+        ]
+      }
+    },
+    "exp_parcel_form": {
+      "id": "exp_parcel_form",
+      "key": "exp_parcel_form",
+      "name": "包裹入库与取件-表单",
+      "model": "exp_parcel",
+      "type": "form",
+      "mode": "primary",
+      "inheritFrom": null,
+      "priority": 10,
+      "active": true,
+      "body": {
+        "type": "form",
+        "columns": [
+          {
+            "name": "inbound_no",
+            "displayName": "入库流水号"
+          },
+          {
+            "name": "tracking_no",
+            "displayName": "快递运单号"
+          },
+          {
+            "name": "courier_brand",
+            "displayName": "快递品牌"
+          },
+          {
+            "name": "parcel_size",
+            "displayName": "快件规格"
+          },
+          {
+            "name": "recipient_name",
+            "displayName": "收件人姓名"
+          },
+          {
+            "name": "recipient_phone",
+            "displayName": "收件人手机"
+          },
+          {
+            "name": "pickup_code",
+            "displayName": "取件码"
+          },
+          {
+            "name": "shelf_id",
+            "displayName": "存放货架"
+          },
+          {
+            "name": "shelf_manager",
+            "displayName": "货架理货员"
+          },
+          {
+            "name": "storage_days",
+            "displayName": "滞留天数"
+          },
+          {
+            "name": "overdue_fee",
+            "displayName": "超期保管费(元)"
+          },
+          {
+            "name": "status",
+            "displayName": "包裹状态"
+          },
+          {
+            "name": "remark",
+            "displayName": "备注说明"
+          }
+        ],
+        "tabs": []
+      }
+    },
+    "exp_problem_order_grid": {
+      "id": "exp_problem_order_grid",
+      "key": "exp_problem_order_grid",
+      "name": "问题件处理单-表格",
+      "model": "exp_problem_order",
+      "type": "grid",
+      "mode": "primary",
+      "inheritFrom": null,
+      "priority": 10,
+      "active": true,
+      "body": {
+        "type": "grid",
+        "columns": [
+          {
+            "name": "ticket_no",
+            "displayName": "工单号",
+            "sortable": true
+          },
+          {
+            "name": "parcel_id",
+            "displayName": "关联包裹",
+            "sortable": true
+          },
+          {
+            "name": "urgency",
+            "displayName": "紧急程度",
+            "sortable": true,
+            "width": "120px"
+          },
+          {
+            "name": "issue_desc",
+            "displayName": "异常描述",
+            "sortable": true
+          },
+          {
+            "name": "handle_result",
+            "displayName": "处理结论",
+            "sortable": true,
+            "width": "120px"
+          },
+          {
+            "name": "evidence_file",
+            "displayName": "破损拍照凭证",
+            "sortable": true
+          },
+          {
+            "name": "status",
+            "displayName": "处理状态",
+            "sortable": true,
+            "width": "120px"
+          }
+        ],
+        "tbar": [
+          {
+            "name": "新增",
+            "action": "create",
+            "auth": "create",
+            "type": "primary"
+          },
+          {
+            "name": "批量删除",
+            "action": "delete",
+            "auth": "delete",
+            "type": "danger",
+            "confirm": "确认删除选中记录？",
+            "args": {
+              "ids": "$selectedIds"
+            },
+            "actionAfter": "refreshTable"
+          }
+        ],
+        "buttons": [
+          {
+            "name": "详情",
+            "action": "preview",
+            "auth": "read",
+            "type": "default"
+          },
+          {
+            "name": "编辑",
+            "action": "edit",
+            "auth": "update",
+            "type": "primary"
+          },
+          {
+            "name": "删除",
+            "action": "delete",
+            "auth": "delete",
+            "type": "danger",
+            "confirm": "确认删除该记录？",
+            "args": {
+              "id": "$row.id"
+            },
+            "actionAfter": "refreshTable"
+          },
+          {
+            "name": "受理核查",
+            "action": "custom",
+            "auth": "action",
+            "type": "success",
+            "service": "startHandle",
+            "enableCondition": "['OPEN'].includes(row.status)",
+            "args": {
+              "id": "$row.id"
+            },
+            "actionAfter": "refreshTable"
+          },
+          {
+            "name": "确认办结",
+            "action": "custom",
+            "auth": "action",
+            "type": "success",
+            "service": "closeTicket",
+            "enableCondition": "['PROCESSING'].includes(row.status)",
+            "args": {
+              "id": "$row.id"
+            },
+            "actionAfter": "refreshTable"
+          }
+        ]
+      }
+    },
+    "exp_problem_order_search": {
+      "id": "exp_problem_order_search",
+      "key": "exp_problem_order_search",
+      "name": "问题件处理单-搜索",
+      "model": "exp_problem_order",
+      "type": "search",
+      "mode": "primary",
+      "inheritFrom": null,
+      "priority": 10,
+      "active": true,
+      "body": {
+        "type": "search",
+        "columns": [
+          {
+            "name": "ticket_no",
+            "displayName": "工单号"
+          },
+          {
+            "name": "parcel_id",
+            "displayName": "关联包裹"
+          },
+          {
+            "name": "urgency",
+            "displayName": "紧急程度"
+          },
+          {
+            "name": "handle_result",
+            "displayName": "处理结论"
+          }
+        ]
+      }
+    },
+    "exp_problem_order_form": {
+      "id": "exp_problem_order_form",
+      "key": "exp_problem_order_form",
+      "name": "问题件处理单-表单",
+      "model": "exp_problem_order",
+      "type": "form",
+      "mode": "primary",
+      "inheritFrom": null,
+      "priority": 10,
+      "active": true,
+      "body": {
+        "type": "form",
+        "columns": [
+          {
+            "name": "ticket_no",
+            "displayName": "工单号"
+          },
+          {
+            "name": "parcel_id",
+            "displayName": "关联包裹"
+          },
+          {
+            "name": "urgency",
+            "displayName": "紧急程度"
+          },
+          {
+            "name": "issue_desc",
+            "displayName": "异常描述"
+          },
+          {
+            "name": "handle_result",
+            "displayName": "处理结论"
+          },
+          {
+            "name": "evidence_file",
+            "displayName": "破损拍照凭证"
+          },
+          {
+            "name": "status",
+            "displayName": "处理状态"
+          }
+        ],
+        "tabs": []
+      }
+    }
+  },
+  "menus": {
+    "exp_shelf_menu": {
+      "name": "exp_shelf_menu",
+      "display_name": "货架区位档案",
+      "icon": "Document",
+      "model": "exp_shelf",
+      "view": "exp_shelf_grid,exp_shelf_search,exp_shelf_form",
+      "sequence": 10,
+      "active": true,
+      "parent_ids": {
+        "@ref": "express_station_app_root_menu"
+      }
+    },
+    "exp_inbound_batch_menu": {
+      "name": "exp_inbound_batch_menu",
+      "display_name": "快递车批次签收",
+      "icon": "Document",
+      "model": "exp_inbound_batch",
+      "view": "exp_inbound_batch_grid,exp_inbound_batch_search,exp_inbound_batch_form",
+      "sequence": 20,
+      "active": true,
+      "parent_ids": {
+        "@ref": "express_station_app_root_menu"
+      }
+    },
+    "express_station_app_root_menu": {
+      "name": "express_station_app_root_menu",
+      "display_name": "快递站管理系统",
+      "icon": "FolderOpened",
+      "model": null,
+      "view": null,
+      "sequence": 20,
+      "active": true
+    },
+    "exp_parcel_menu": {
+      "name": "exp_parcel_menu",
+      "display_name": "包裹入库与取件",
+      "icon": "Document",
+      "model": "exp_parcel",
+      "view": "exp_parcel_grid,exp_parcel_search,exp_parcel_form",
+      "sequence": 30,
+      "active": true,
+      "parent_ids": {
+        "@ref": "express_station_app_root_menu"
+      }
+    },
+    "exp_problem_order_menu": {
+      "name": "exp_problem_order_menu",
+      "display_name": "问题件处理单",
+      "icon": "Document",
+      "model": "exp_problem_order",
+      "view": "exp_problem_order_grid,exp_problem_order_search,exp_problem_order_form",
+      "sequence": 40,
+      "active": true,
+      "parent_ids": {
+        "@ref": "express_station_app_root_menu"
+      }
+    },
+    "exp_inbound_detail_menu": {
+      "name": "exp_inbound_detail_menu",
+      "display_name": "随车包裹明细",
+      "icon": "Document",
+      "model": "exp_inbound_detail",
+      "view": "exp_inbound_detail_grid,exp_inbound_detail_search,exp_inbound_detail_form",
+      "sequence": 90,
+      "active": false,
+      "parent_ids": {
+        "@ref": "express_station_app_root_menu"
+      }
+    }
+  }
+}

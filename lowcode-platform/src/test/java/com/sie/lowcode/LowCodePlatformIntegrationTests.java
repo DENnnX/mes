@@ -764,11 +764,14 @@ public class LowCodePlatformIntegrationTests {
         assertThat(auth).containsEntry("read", true).containsEntry("create", false).containsEntry("delete", false);
         requireError(rpcCall(bReaderToken, "qa_ticket", "create", Map.of("values", Map.of("title", "越权写入"))), -32001);
 
-        // 5. 多租户数据严格隔离：b_writer 新建数据归属 tenant_b，双方互相不可见
+        // 5. 多租户数据严格隔离：b_writer 新建数据归属 tenant_b，双方互相不可见（且不同租户唯一流水号 0002 不互相冲突）
         requireResult(rpcCall(bWriterToken, "qa_ticket", "create", Map.of("values", Map.of("title", "租户B专属工单"))));
+        Map<String, Object> bSecondTicket = requireResult(rpcCall(bWriterToken, "qa_ticket", "create", Map.of("values", Map.of("title", "租户B第二单"))));
+        assertThat((String) bSecondTicket.get("code")).endsWith("0002");
         Map<String, Object> bRows = requireResult(rpcCall(bReaderToken, "qa_ticket", "search", Map.of("filter", Collections.emptyList())));
-        assertThat(((Number) bRows.get("total")).longValue()).isEqualTo(1L);
-        assertThat(((List<Map<String, Object>>) bRows.get("records")).get(0).get("title")).isEqualTo("租户B专属工单");
+        assertThat(((Number) bRows.get("total")).longValue()).isEqualTo(2L);
+        assertThat((List<Map<String, Object>>) bRows.get("records"))
+                .extracting(r -> r.get("title")).containsExactlyInAnyOrder("租户B专属工单", "租户B第二单");
 
         Map<String, Object> rootRows = requireResult(rpcCall(userToken, "qa_ticket", "search", Map.of("filter", Collections.emptyList())));
         assertThat((List<Map<String, Object>>) rootRows.get("records"))

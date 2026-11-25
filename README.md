@@ -159,10 +159,14 @@ java -Dserver.port=8089 -DDB_PATH=./my-data/lowcode.db -jar target/lowcode-platf
 
 ---
 
-## 设计文档索引 (`docs/`)
+## 设计文档与示例应用索引 (`docs/`)
 
 - [01_SRS_软件需求规格说明书.md](docs/01_SRS_软件需求规格说明书.md)
 - [02_DDD领域建模与数据模型设计.md](docs/02_DDD领域建模与数据模型设计.md)
 - [03_状态机与引擎生命周期设计.md](docs/03_状态机与引擎生命周期设计.md)
 - [04_JSONRPC动态接口与元模型规范契约.md](docs/04_JSONRPC动态接口与元模型规范契约.md)
+- **快递站管理系统（低代码实战样例）**：
+  - [快递站管理系统_设计时操作流程.md](docs/快递站管理系统_设计时操作流程.md)
+  - [快递站管理系统_使用教程.md](docs/快递站管理系统_使用教程.md)
+  - 可导入应用配置包：[express-station-package.json](docs/express-station-package.json)
 - 应用包校验 Schema：[schemas/app-package-schema.json](schemas/app-package-schema.json)

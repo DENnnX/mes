@@ -85,19 +85,23 @@ public class DynamicSqlEngine {
             String col = safeIdent(prop.resolvedColumnName());
             if (prop.isUnique()) {
                 String idx = safeIdent("uk_" + table + "_" + col);
-                jdbcTemplate.execute("CREATE UNIQUE INDEX IF NOT EXISTS " + idx + " ON " + table + "(" + col + ")");
+                jdbcTemplate.execute("CREATE UNIQUE INDEX IF NOT EXISTS " + idx + " ON " + table + "(tenant_id, " + col + ")");
             } else if (prop.isManyToOne()) {
                 String idx = safeIdent("idx_" + table + "_" + col);
                 jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS " + idx + " ON " + table + "(" + col + ")");
             }
         }
 
-        // 模型复合索引 / 联合唯一索引维护
+        // 模型复合索引 / 联合唯一索引维护（唯一索引按 tenant_id 分区隔离）
         for (IndexDef idxDef : snapshot.getIndexes()) {
             if (idxDef.getColumnList() == null || idxDef.getColumnList().isEmpty()) continue;
             List<String> cols = new ArrayList<>();
+            if (idxDef.isUnique()) {
+                cols.add("tenant_id");
+            }
             for (String f : idxDef.getColumnList()) {
-                cols.add(resolveColumn(f, snapshot));
+                String c = resolveColumn(f, snapshot);
+                if (!cols.contains(c)) cols.add(c);
             }
             String idxName = safeIdent((idxDef.getName() != null && !idxDef.getName().isBlank())
                     ? idxDef.getName()
