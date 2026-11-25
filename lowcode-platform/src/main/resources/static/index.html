@@ -48,26 +48,21 @@
       background: linear-gradient(145deg, #eef2ff 0%, #f8fafc 48%, #e2e8f0 100%);
     }
     .lc-login-card {
-      width: 920px; max-width: 100%; background: #ffffff; border-radius: 16px;
+      width: 840px; max-width: 100%; background: #ffffff; border-radius: 16px;
       box-shadow: 0 22px 55px rgba(15, 23, 42, 0.11); overflow: hidden;
-      display: grid; grid-template-columns: 1fr 1.12fr; border: 1px solid #e2e8f0;
+      display: grid; grid-template-columns: 0.92fr 1.08fr; border: 1px solid #e2e8f0;
     }
     @media (max-width: 780px) { .lc-login-card { grid-template-columns: 1fr; } .lc-login-hero { display: none; } }
     .lc-login-hero {
-      background: var(--primary-grad); color: #ffffff; padding: 42px 34px;
+      background: var(--primary-grad); color: #ffffff; padding: 44px 34px;
       display: flex; flex-direction: column; justify-content: space-between;
     }
-    .lc-login-hero h1 { font-size: 24px; margin: 16px 0 10px; line-height: 1.38; font-weight: 700; }
+    .lc-login-hero h1 { font-size: 24px; margin: 28px 0 12px; line-height: 1.38; font-weight: 700; }
     .lc-login-hero p { font-size: 13.5px; line-height: 1.7; opacity: 0.9; margin: 0; }
-    .lc-hero-feature {
-      margin-top: 14px; padding: 12px 14px; border-radius: 10px;
-      background: rgba(255, 255, 255, 0.12); backdrop-filter: blur(4px);
-      font-size: 12.8px; line-height: 1.6; border: 1px solid rgba(255,255,255,0.14);
-    }
-    .lc-login-form-box { padding: 42px 38px; display: flex; flex-direction: column; justify-content: center; }
+    .lc-login-form-box { padding: 44px 38px; display: flex; flex-direction: column; justify-content: center; }
     .lc-login-footer-hint {
       margin-top: 22px; padding-top: 14px; border-top: 1px solid #f1f5f9;
-      display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: #94a3b8;
+      display: flex; align-items: center; justify-content: flex-end; font-size: 12px; color: #94a3b8;
     }
 
     /* 主工作区 */
@@ -180,7 +175,7 @@
         <div class="lc-login-hero">
           <div>
             <div style="display:flex;align-items:center;gap:10px;">
-              <div style="width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;">
+              <div style="width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
                   <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
                   <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
@@ -188,25 +183,17 @@
                   <path d="M14 17.5h7M17.5 14v7"></path>
                 </svg>
               </div>
-              <span style="font-size:14px;font-weight:600;letter-spacing:0.3px;">云枢 · 企业应用搭建平台</span>
+              <span style="font-size:15px;font-weight:600;letter-spacing:0.3px;">云枢低代码平台</span>
             </div>
-            <h1>模型驱动应用开发与<br />多租户工作空间</h1>
-            <p>在线设计业务数据模型、表单界面与审批流转规则，平台即时生成数据库存储、业务接口及全功能运行页面。</p>
-            <div class="lc-hero-feature">
-              <strong>多租户应用级安全门禁</strong><br />
-              各企业租户的数据相互隔离；租户账号登录后仅能访问系统管理员明确授权的业务应用。
-            </div>
-            <div class="lc-hero-feature">
-              <strong>一体化配置与版本管理</strong><br />
-              内置应用设计器、字典编码规则、页面布局编排、版本影响检查与受控安全清理机制。
-            </div>
+            <h1>模型驱动 · 按需构建</h1>
+            <p>在线设计数据表与表单页面，按租户自动隔离并统一分配应用权限。</p>
           </div>
-          <div style="font-size:12px;opacity:0.78;">CloudForge Low-Code Platform · v2.1.0</div>
+          <div style="font-size:12px;opacity:0.75;">CloudForge · v2.1</div>
         </div>
 
         <div class="lc-login-form-box">
           <h2 style="margin:0 0 6px;font-size:22px;color:#0f172a;">账号登录</h2>
-          <p style="margin:0 0 20px;font-size:13px;color:#64748b;">请输入您的登录凭据进入授权的工作空间</p>
+          <p style="margin:0 0 22px;font-size:13px;color:#64748b;">请输入账号密码，登录后自动进入已授权应用空间</p>
 
           <el-alert v-if="loginError" :title="loginError" type="error" show-icon :closable="true" @close="loginError = ''" style="margin-bottom:16px;"></el-alert>
 
@@ -217,14 +204,7 @@
             <el-form-item label="密码" required>
               <el-input v-model="loginForm.password" type="password" show-password placeholder="请输入登录密码" prefix-icon="Lock" @keyup.enter="submitLoginPage"></el-input>
             </el-form-item>
-            <el-form-item label="登录目标">
-              <el-select v-model="loginForm.targetApp" style="width:100%;">
-                <el-option value="" label="自动进入已授权应用"></el-option>
-                <el-option value="__studio__" label="管理中心（系统管理员）"></el-option>
-                <el-option v-for="ap in publicAppsList" :key="ap.name" :value="ap.name" :label="ap.displayName + ' (' + ap.name + ')'"></el-option>
-              </el-select>
-            </el-form-item>
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
               <el-checkbox v-model="rememberUsername" size="small">记住账号</el-checkbox>
               <span style="font-size:12px;color:#94a3b8;">忘记密码请联系系统管理员重置</span>
             </div>
@@ -234,7 +214,6 @@
           </el-form>
 
           <div class="lc-login-footer-hint">
-            <span>安全会话连接已就绪</span>
             <el-popover placement="top-end" width="320" trigger="click">
               <template #reference>
                 <el-button link size="small" style="color:#64748b;">系统初始账号说明</el-button>
@@ -242,12 +221,12 @@
               <div style="font-size:12.5px;line-height:1.7;">
                 <div style="font-weight:600;margin-bottom:6px;color:#0f172a;">系统初始化默认账号（初始密码 123456）：</div>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                  <span><code>admin</code> — 系统管理员（全部管理与安全清理）</span>
-                  <el-button link type="primary" size="small" @click="fillPresetAccount('admin','__studio__')">填入</el-button>
+                  <span><code>admin</code> — 系统管理员（全部应用与管理）</span>
+                  <el-button link type="primary" size="small" @click="fillPresetAccount('admin')">填入</el-button>
                 </div>
                 <div style="display:flex;justify-content:space-between;align-items:center;">
                   <span><code>user</code> — 示例业务用户（应用使用端）</span>
-                  <el-button link type="primary" size="small" @click="fillPresetAccount('user','')">填入</el-button>
+                  <el-button link type="primary" size="small" @click="fillPresetAccount('user')">填入</el-button>
                 </div>
               </div>
             </el-popover>
@@ -1608,7 +1587,7 @@
         const publicAppsList = ref([]);
 
         const rememberUsername = ref(true);
-        const loginForm = reactive({ username: localStorage.getItem('lc_saved_user') || '', password: '', targetApp: '' });
+        const loginForm = reactive({ username: localStorage.getItem('lc_saved_user') || '', password: '' });
         const loginLoading = ref(false);
         const loginError = ref('');
 
@@ -1767,10 +1746,9 @@
           try { publicAppsList.value = await rpcCall('sys_portal', 'publicApps', {}, '/rpc/open/service') || []; }
           catch (e) { publicAppsList.value = []; }
         }
-        function fillPresetAccount(username, target) {
+        function fillPresetAccount(username) {
           loginForm.username = username;
           loginForm.password = '123456';
-          loginForm.targetApp = target;
         }
         async function submitLoginPage() {
           if (!loginForm.username.trim() || !loginForm.password) { loginError.value = '请输入账号和密码'; return; }
@@ -1779,29 +1757,25 @@
           try {
             if (rememberUsername.value) localStorage.setItem('lc_saved_user', loginForm.username.trim());
             else localStorage.removeItem('lc_saved_user');
-            const res = await rpcCall('rbac_user', 'login', { username: loginForm.username.trim(), password: loginForm.password, appName: loginForm.targetApp || '' });
+            const res = await rpcCall('rbac_user', 'login', { username: loginForm.username.trim(), password: loginForm.password });
             token.value = res.token;
             currentUser.value = res.user;
             localStorage.setItem('lc_token', res.token);
             openTabs.value = [];
             activeRuntimeModel.value = '';
             ElMessage.success('登录成功，欢迎 ' + res.user.displayName);
-            await routeAfterLogin(loginForm.targetApp);
+            await routeAfterLogin();
           } catch (e) {
             loginError.value = e.message;
           } finally { loginLoading.value = false; }
         }
 
-        async function routeAfterLogin(targetApp) {
+        async function routeAfterLogin() {
           await loadMenuTree();
-          if (!currentUser.value?.canAccessStudio || (targetApp && targetApp !== '__studio__')) {
+          if (!currentUser.value?.canAccessStudio) {
             workspaceMode.value = 'runtime';
-            if (targetApp && targetApp !== '__studio__') await jumpToAppFirstMenu(targetApp);
-            else {
-              const firstLeaf = findFirstLeafModel(menuTree.value);
-              if (firstLeaf) await openRuntimeModel(firstLeaf.model, firstLeaf.view, firstLeaf.displayName);
-              else window.location.hash = '#/runtime';
-            }
+            activeRuntimeModel.value = '';
+            window.location.hash = '#/runtime';
           } else {
             workspaceMode.value = 'studio';
             switchStudioTab('overview');
@@ -2434,7 +2408,7 @@
                 currentUser.value = prof; authChecking.value = false;
                 const h = window.location.hash || '';
                 if (h.startsWith('#/m/') && h.slice(4)) await openRuntimeModel(h.slice(4).split('?')[0]);
-                else await routeAfterLogin('');
+                else await routeAfterLogin();
                 return;
               }
             } catch (e) { token.value = ''; localStorage.removeItem('lc_token'); }
