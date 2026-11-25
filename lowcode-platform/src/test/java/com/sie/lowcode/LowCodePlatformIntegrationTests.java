@@ -818,5 +818,16 @@ public class LowCodePlatformIntegrationTests {
         assertThat(openResp.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat((List<Map<String, Object>>) openResp.getBody().get("result"))
                 .extracting(a -> a.get("name")).contains("foundation_qa_app", "ext_qa_app");
+
+        // (f) 应用直建 meta_app.save 与用户自助修改密码 rbac_user.changePassword
+        Map<String, Object> savedApp = requireResult(rpcCall(devToken, "meta_app", "save",
+                Map.of("app", Map.of("name", "custom_studio_app", "displayName", "可视化自建应用", "category", "enterprise", "version", "1.0.0"))));
+        assertThat(savedApp.get("displayName")).isEqualTo("可视化自建应用");
+
+        requireError(rpcCall(bWriterToken, "rbac_user", "changePassword",
+                Map.of("oldPassword", "wrong", "newPassword", "bPass2026")), -32602);
+        requireResult(rpcCall(bWriterToken, "rbac_user", "changePassword",
+                Map.of("oldPassword", "init123", "newPassword", "bPass2026")));
+        requireResult(rpcCall(null, "rbac_user", "login", Map.of("username", "b_writer", "password", "bPass2026")));
     }
 }

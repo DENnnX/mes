@@ -66,6 +66,8 @@ public class ExecuteMetaRpcHandler implements RpcHandler {
                     return iamAppService.saveUser(ua);
                 case "resetPassword":
                     return iamAppService.resetPassword(str(args.get("userId")), str(args.get("newPassword")));
+                case "changePassword":
+                    return iamAppService.changePassword(ctx.getUserAccount(), str(args.get("oldPassword")), str(args.get("newPassword")));
                 case "deleteUser":
                     return iamAppService.deleteUser(str(args.get("userId")));
                 default:

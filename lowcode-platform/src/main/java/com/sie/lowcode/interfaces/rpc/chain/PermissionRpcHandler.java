@@ -19,6 +19,8 @@ import java.util.Set;
 public class PermissionRpcHandler implements RpcHandler {
     private static final Set<String> OPEN_METHODS = Set.of(
             "rbac_user.login", "rbac_user.logout", "auth.login", "sys_portal.publicApps");
+    private static final Set<String> AUTH_SELF_METHODS = Set.of(
+            "rbac_user.profile", "rbac_user.changePassword", "auth.profile", "auth.changePassword");
     private static final Set<String> ADMIN_ONLY = Set.of(
             "confirmPurge", "rejectPurge", "saveUser", "deleteUser", "resetPassword",
             "saveRole", "deleteRole", "saveTenant", "authorizeApps");
@@ -39,6 +41,9 @@ public class PermissionRpcHandler implements RpcHandler {
     public Object handle(RpcRequestContext ctx, Chain next) {
         String fullKey = ctx.getModel() + "." + ctx.getService();
         if (ctx.isOpenEndpoint() || OPEN_METHODS.contains(fullKey)) {
+            return next.proceed(ctx);
+        }
+        if (AUTH_SELF_METHODS.contains(fullKey)) {
             return next.proceed(ctx);
         }
 

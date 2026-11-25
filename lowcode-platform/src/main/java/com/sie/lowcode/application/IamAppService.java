@@ -256,6 +256,23 @@ public class IamAppService {
         return Map.of("reset", true, "userId", userId, "username", u.getUsername());
     }
 
+    public Map<String, Object> changePassword(UserAccount current, String oldPassword, String newPassword) {
+        if (current == null) {
+            throw DomainException.permissionDenied("请先登录后再修改密码");
+        }
+        if (oldPassword == null || newPassword == null || newPassword.isBlank()) {
+            throw DomainException.invalidParams("原密码和新密码不能为空");
+        }
+        UserAccount latest = iamRepository.findUserById(current.getId())
+                .orElseThrow(() -> DomainException.invalidParams("用户不存在"));
+        if (!Objects.equals(oldPassword, latest.getPassword())) {
+            throw DomainException.invalidParams("原密码输入不正确");
+        }
+        latest.setPassword(newPassword);
+        iamRepository.saveUser(latest);
+        return Map.of("changed", true, "username", latest.getUsername());
+    }
+
     public Map<String, Object> deleteUser(String userId) {
         if ("usr_admin".equals(userId)) {
             throw DomainException.stateGuardFailed("系统默认主管理员账号禁止删除");

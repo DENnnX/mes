@@ -220,6 +220,12 @@ public class PlatformKernelBootstrap {
 
         // 应用包治理服务
         ext.registerOverride("meta_app", "list", "kernel", (rs, args) -> govService.listApps());
+        ext.registerOverride("meta_app", "save", "kernel", (rs, args) -> {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            Object raw = args.get("app") != null ? args.get("app") : (args.get("values") != null ? args.get("values") : args);
+            AppAggregate appAgg = mapper.convertValue(raw, AppAggregate.class);
+            return govService.saveApp(appAgg);
+        });
         ext.registerOverride("meta_app", "importPackage", "kernel", (rs, args) -> {
             @SuppressWarnings("unchecked")
             Map<String, Object> pkg = args.get("package") instanceof Map ? (Map<String, Object>) args.get("package") : args;
