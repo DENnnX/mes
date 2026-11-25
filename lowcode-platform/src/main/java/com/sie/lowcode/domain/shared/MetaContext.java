@@ -19,6 +19,7 @@ public class MetaContext implements Closeable {
     private String username;
     private String displayName;
     private Set<String> roleCodes = new LinkedHashSet<>();
+    private Set<String> visibleTenantIds = new LinkedHashSet<>();
     private String dataScope = "ALL";
     private String locale = "zh-CN";
     private String timeZone = "UTC+8";
@@ -97,6 +98,10 @@ public class MetaContext implements Closeable {
     public Set<String> getRoleCodes() { return roleCodes; }
     public void setRoleCodes(Set<String> roleCodes) {
         this.roleCodes = roleCodes != null ? new LinkedHashSet<>(roleCodes) : new LinkedHashSet<>();
+    }
+    public Set<String> getVisibleTenantIds() { return visibleTenantIds; }
+    public void setVisibleTenantIds(Set<String> visibleTenantIds) {
+        this.visibleTenantIds = visibleTenantIds != null ? new LinkedHashSet<>(visibleTenantIds) : new LinkedHashSet<>();
     }
     public String getDataScope() { return dataScope; }
     public void setDataScope(String dataScope) { this.dataScope = dataScope; }

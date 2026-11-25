@@ -258,6 +258,10 @@
             <el-radio-button value="studio">管理中心</el-radio-button>
             <el-radio-button value="runtime">应用工作区</el-radio-button>
           </el-radio-group>
+          <el-radio-group v-else-if="currentUser.canManageTenants" v-model="workspaceMode" size="small" @change="onWorkspaceChange">
+            <el-radio-button value="tenant_admin">分站与授权</el-radio-button>
+            <el-radio-button value="runtime">应用工作区</el-radio-button>
+          </el-radio-group>
           <el-tag v-else type="primary" effect="light" size="small">
             当前租户：{{ currentUser.tenantName || currentUser.tenantId }}
           </el-tag>
@@ -272,7 +276,8 @@
             <el-button size="small" type="primary" plain>
               <el-icon style="margin-right:4px;"><User /></el-icon>
               <span>{{ currentUser.displayName }}</span>
-              <el-tag v-if="currentUser.isSystemAdmin" size="small" type="danger" style="margin-left:5px;">管理员</el-tag>
+              <el-tag v-if="currentUser.isSystemAdmin" size="small" type="danger" style="margin-left:5px;">系统管理员</el-tag>
+              <el-tag v-else-if="currentUser.canManageTenants" size="small" type="warning" style="margin-left:5px;">租户主管</el-tag>
               <el-icon style="margin-left:4px;"><ArrowDown /></el-icon>
             </el-button>
             <template #dropdown>
@@ -343,6 +348,18 @@
             </div>
           </template>
 
+          <template v-else-if="workspaceMode === 'tenant_admin' && currentUser.canManageTenants">
+            <div class="lc-side-section">本级与下属管理</div>
+            <div class="lc-side-scroll">
+              <div class="lc-nav-item active" @click="switchStudioTab('iam')">
+                <el-icon><UserFilled /></el-icon><span>分站与应用授权</span>
+              </div>
+              <div class="lc-nav-item" @click="onWorkspaceChange('runtime')">
+                <el-icon><House /></el-icon><span>进入应用工作区</span>
+              </div>
+            </div>
+          </template>
+
           <template v-else>
             <div class="lc-side-section">应用功能导航</div>
             <div class="lc-side-scroll">
@@ -376,8 +393,8 @@
 
         <!-- 主内容区 -->
         <main class="lc-main">
-          <!-- ======================= 1. 管理中心 ======================= -->
-          <template v-if="workspaceMode === 'studio' && currentUser.canAccessStudio">
+          <!-- ======================= 1. 管理中心 / 分级租户管理 ======================= -->
+          <template v-if="(workspaceMode === 'studio' && currentUser.canAccessStudio) || (workspaceMode === 'tenant_admin' && currentUser.canManageTenants)">
             <!-- Tab 0: 工作台概览 -->
             <div v-if="studioTab === 'overview'">
               <div class="lc-welcome-banner">
@@ -643,23 +660,34 @@
 
             <!-- Tab 4: 租户、组织与授权 -->
             <div v-if="studioTab === 'iam'" class="lc-card">
-              <el-alert v-if="!currentUser.isSystemAdmin"
-                        title="提示：仅系统管理员 (admin) 可修改租户应用授权、增删账号与配置角色权限，当前仅提供查看。"
+              <el-alert v-if="currentUser.canManageTenants && !currentUser.isSystemAdmin"
+                        title="分级授权边界：当前作为企业/分站主管，仅可查看与管理本租户及下属分站的应用授权、部门与员工账号，无权操作平台根系统设置或其他无关企业。"
+                        type="info" show-icon :closable="false" style="margin-bottom:12px;"></el-alert>
+              <el-alert v-else-if="!currentUser.isSystemAdmin"
+                        title="提示：仅系统管理员或授权主管可修改租户应用授权与账号，当前仅提供查看。"
                         type="info" show-icon :closable="false" style="margin-bottom:12px;"></el-alert>
 
               <el-tabs v-model="iamSubTab" @tab-change="onIamSubTabChange">
                 <el-tab-pane label="租户与应用授权管理" name="tenants">
                   <div class="lc-toolbar">
-                    <span style="font-size:13px;color:#475569;">创建企业租户并精确分配每个租户登录后能使用的应用范围。</span>
-                    <el-button size="small" type="primary" :disabled="!currentUser.isSystemAdmin" @click="openTenantDialog(null)">+ 新增租户</el-button>
+                    <span style="font-size:13px;color:#475569;">{{ currentUser.isSystemAdmin ? '创建企业租户并精确分配每个租户登录后能使用的应用范围。' : '为下属分站分配已获授权的应用，并管理分站开通状态。' }}</span>
+                    <el-button size="small" type="primary" :disabled="!currentUser.canManageTenants" @click="openTenantDialog(null)">{{ currentUser.isSystemAdmin ? '+ 新增租户' : '+ 新增下属分站' }}</el-button>
                   </div>
                   <el-table :data="tenantsList" border size="small">
-                    <el-table-column prop="name" label="租户名称" width="165"></el-table-column>
-                    <el-table-column prop="code" label="租户编码" width="135"></el-table-column>
+                    <el-table-column prop="name" label="租户名称" width="165">
+                      <template #default="{ row }">
+                        <strong>{{ row.name }}</strong>
+                        <el-tag v-if="row.id === currentUser.tenantId && !currentUser.isSystemAdmin" size="small" effect="plain" style="margin-left:5px;">本级总部</el-tag>
+                      </template>
+                    </el-table-column>
+                    <el-table-column prop="code" label="租户编码" width="125"></el-table-column>
+                    <el-table-column label="上级归属" width="135">
+                      <template #default="{ row }">{{ row.parentTenantId ? resolveTenantName(row.parentTenantId) : '平台顶级' }}</template>
+                    </el-table-column>
                     <el-table-column label="状态" width="95">
                       <template #default="{ row }"><el-tag size="small" :type="row.status === 'ACTIVE' ? 'success' : 'danger'">{{ row.status === 'ACTIVE' ? '正常启用' : '已停用' }}</el-tag></template>
                     </el-table-column>
-                    <el-table-column label="已授权可登录的应用" min-width="240">
+                    <el-table-column label="已授权可登录的应用" min-width="210">
                       <template #default="{ row }">
                         <el-tag v-if="row.authorizedApps && row.authorizedApps.includes('*')" size="small" type="primary">全部应用可用 (*)</el-tag>
                         <el-tag v-else-if="!row.authorizedApps || row.authorizedApps.length === 0" size="small" type="warning">暂未授权任何应用（无法登录）</el-tag>
@@ -668,9 +696,9 @@
                     </el-table-column>
                     <el-table-column label="操作" width="285" fixed="right">
                       <template #default="{ row }">
-                        <el-button size="small" type="primary" plain :disabled="!currentUser.isSystemAdmin" @click="openAuthAppsDialog(row)">管理应用授权</el-button>
-                        <el-button link type="success" size="small" :disabled="!currentUser.isSystemAdmin" @click="openQuickUserForTenant(row)">分配账号</el-button>
-                        <el-button link type="primary" size="small" :disabled="!currentUser.isSystemAdmin" @click="openTenantDialog(row)">编辑</el-button>
+                        <el-button size="small" type="primary" plain :disabled="!currentUser.canManageTenants || (!currentUser.isSystemAdmin && row.id === currentUser.tenantId)" @click="openAuthAppsDialog(row)">管理应用授权</el-button>
+                        <el-button link type="success" size="small" :disabled="!currentUser.canManageTenants" @click="openQuickUserForTenant(row)">分配账号</el-button>
+                        <el-button link type="primary" size="small" :disabled="!currentUser.canManageTenants" @click="openTenantDialog(row)">编辑</el-button>
                       </template>
                     </el-table-column>
                   </el-table>
@@ -680,13 +708,13 @@
                   <div class="lc-toolbar">
                     <div style="display:flex;gap:8px;align-items:center;">
                       <span style="font-size:12.5px;color:#475569;">所属租户：</span>
-                      <el-select v-model="iamFilterTenant" clearable placeholder="全部租户" size="small" style="width:190px;" @change="loadOrgsAndUsers">
+                      <el-select v-model="iamFilterTenant" clearable placeholder="全部可见租户" size="small" style="width:190px;" @change="loadOrgsAndUsers">
                         <el-option v-for="t in tenantsList" :key="t.id" :label="t.name + ' (' + t.code + ')'" :value="t.id"></el-option>
                       </el-select>
                     </div>
                     <div style="display:flex;gap:8px;">
-                      <el-button size="small" @click="openOrgDialog(null)">+ 新增部门</el-button>
-                      <el-button size="small" type="primary" :disabled="!currentUser.isSystemAdmin" @click="openUserDialog(null)">+ 新增账号</el-button>
+                      <el-button size="small" :disabled="!currentUser.canManageTenants && !currentUser.canAccessStudio" @click="openOrgDialog(null)">+ 新增部门</el-button>
+                      <el-button size="small" type="primary" :disabled="!currentUser.canManageTenants" @click="openUserDialog(null)">+ 新增账号</el-button>
                     </div>
                   </div>
                   <el-row :gutter="14">
@@ -717,9 +745,9 @@
                         </el-table-column>
                         <el-table-column label="操作" width="195">
                           <template #default="{ row }">
-                            <el-button link type="primary" size="small" :disabled="!currentUser.isSystemAdmin" @click="openUserDialog(row)">编辑</el-button>
-                            <el-button link type="warning" size="small" :disabled="!currentUser.isSystemAdmin" @click="resetUserPassword(row)">重置密码</el-button>
-                            <el-button link type="danger" size="small" :disabled="!currentUser.isSystemAdmin" @click="deleteUser(row.id)">删</el-button>
+                            <el-button link type="primary" size="small" :disabled="!currentUser.canManageTenants" @click="openUserDialog(row)">编辑</el-button>
+                            <el-button link type="warning" size="small" :disabled="!currentUser.canManageTenants" @click="resetUserPassword(row)">重置密码</el-button>
+                            <el-button link type="danger" size="small" :disabled="!currentUser.canManageTenants || row.id === currentUser.id || row.id === 'usr_admin'" @click="deleteUser(row.id)">删</el-button>
                           </template>
                         </el-table-column>
                       </el-table>
@@ -727,7 +755,7 @@
                   </el-row>
                 </el-tab-pane>
 
-                <el-tab-pane label="角色与操作权限" name="roles">
+                <el-tab-pane v-if="currentUser.isSystemAdmin" label="角色与操作权限" name="roles">
                   <div class="lc-toolbar">
                     <span style="font-size:12.5px;color:#475569;">按角色配置数据查看范围及可操作的数据表与功能按钮权限。</span>
                     <el-button size="small" type="primary" :disabled="!currentUser.isSystemAdmin" @click="openRoleDialog(null)">+ 新增角色</el-button>
@@ -1530,17 +1558,28 @@
       </el-dialog>
 
       <el-dialog v-model="tenantDialog.visible" title="租户信息管理" width="450px" destroy-on-close>
-        <el-form label-width="95px" size="small"><el-form-item label="租户编码" required><el-input v-model="tenantDialog.form.code" :disabled="tenantDialog.form.id === 'rbac_tenant_root'"></el-input></el-form-item><el-form-item label="租户名称" required><el-input v-model="tenantDialog.form.name"></el-input></el-form-item><el-form-item label="联系人"><el-input v-model="tenantDialog.form.contactName"></el-input></el-form-item><el-form-item label="联系电话"><el-input v-model="tenantDialog.form.contactPhone"></el-input></el-form-item><el-form-item label="状态"><el-select v-model="tenantDialog.form.status" :disabled="tenantDialog.form.id === 'rbac_tenant_root'" style="width:100%;"><el-option value="ACTIVE" label="正常启用"></el-option><el-option value="DISABLED" label="已停用（禁止登录）"></el-option></el-select></el-form-item></el-form>
+        <el-form label-width="95px" size="small">
+          <el-form-item label="租户编码" required><el-input v-model="tenantDialog.form.code" :disabled="tenantDialog.form.id === 'rbac_tenant_root'"></el-input></el-form-item>
+          <el-form-item label="租户名称" required><el-input v-model="tenantDialog.form.name"></el-input></el-form-item>
+          <el-form-item v-if="currentUser.isSystemAdmin && tenantDialog.form.id !== 'rbac_tenant_root'" label="上级租户">
+            <el-select v-model="tenantDialog.form.parentTenantId" clearable placeholder="默认为平台根租户" style="width:100%;">
+              <el-option v-for="t in tenantsList.filter(x => x.id !== tenantDialog.form.id)" :key="t.id" :label="t.name + ' (' + t.code + ')'" :value="t.id"></el-option>
+            </el-select>
+          </el-form-item>
+          <el-form-item label="联系人"><el-input v-model="tenantDialog.form.contactName"></el-input></el-form-item>
+          <el-form-item label="联系电话"><el-input v-model="tenantDialog.form.contactPhone"></el-input></el-form-item>
+          <el-form-item label="状态"><el-select v-model="tenantDialog.form.status" :disabled="tenantDialog.form.id === 'rbac_tenant_root'" style="width:100%;"><el-option value="ACTIVE" label="正常启用"></el-option><el-option value="DISABLED" label="已停用（禁止登录）"></el-option></el-select></el-form-item>
+        </el-form>
         <template #footer><el-button size="small" @click="tenantDialog.visible = false">取消</el-button><el-button type="primary" size="small" @click="saveTenant">保存</el-button></template>
       </el-dialog>
 
-      <el-dialog v-model="authAppsDialog.visible" :title="'设置租户可用应用：' + authAppsDialog.tenantName" width="490px" destroy-on-close>
-        <el-alert title="勾选允许该租户员工登录与访问的业务应用；未勾选的应用将被完全隔离并拦截登录。" type="info" :closable="false" style="margin-bottom:12px;"></el-alert>
-        <div style="margin-bottom:10px;padding:8px 10px;background:#f8fafc;border-radius:6px;"><el-checkbox v-model="authAppsDialog.allowAll">允许该租户使用全部应用（包括未来新建的应用）</el-checkbox></div>
-        <div v-if="!authAppsDialog.allowAll">
-          <div v-if="businessAppsOnly.length === 0" style="color:#94a3b8;font-size:12.5px;padding:10px;">当前尚未创建任何业务应用，请先在「应用管理」中新建或导入应用。</div>
+      <el-dialog v-model="authAppsDialog.visible" :title="'设置可用应用授权：' + authAppsDialog.tenantName" width="490px" destroy-on-close>
+        <el-alert :title="currentUser.isSystemAdmin ? '勾选允许该租户员工登录与访问的业务应用；未勾选的应用将被完全隔离并拦截登录。' : '只能向下属分站转授本总部已获授权的业务应用；未勾选的应用将被完全隔离。'" type="info" :closable="false" style="margin-bottom:12px;"></el-alert>
+        <div v-if="currentUser.isSystemAdmin" style="margin-bottom:10px;padding:8px 10px;background:#f8fafc;border-radius:6px;"><el-checkbox v-model="authAppsDialog.allowAll">允许该租户使用全部应用（包括未来新建的应用）</el-checkbox></div>
+        <div v-if="!authAppsDialog.allowAll || !currentUser.isSystemAdmin">
+          <div v-if="assignableApps.length === 0" style="color:#94a3b8;font-size:12.5px;padding:10px;">当前没有可分配的业务应用。</div>
           <el-checkbox-group v-else v-model="authAppsDialog.selected" style="display:flex;flex-direction:column;gap:8px;padding:4px 6px;">
-            <el-checkbox v-for="ap in businessAppsOnly" :key="ap.name" :value="ap.name"><strong>{{ ap.displayName }}</strong> <span style="color:#64748b;font-size:12px;">({{ ap.name }})</span></el-checkbox>
+            <el-checkbox v-for="ap in assignableApps" :key="ap.name" :value="ap.name"><strong>{{ ap.displayName }}</strong> <span style="color:#64748b;font-size:12px;">({{ ap.name }})</span></el-checkbox>
           </el-checkbox-group>
         </div>
         <template #footer><el-button size="small" @click="authAppsDialog.visible = false">取消</el-button><el-button type="primary" size="small" @click="saveAuthApps">保存应用授权</el-button></template>
@@ -1776,14 +1815,20 @@
 
         async function routeAfterLogin() {
           await loadMenuTree();
-          if (!currentUser.value?.canAccessStudio) {
-            workspaceMode.value = 'runtime';
-            activeRuntimeModel.value = '';
-            window.location.hash = '#/runtime';
-          } else {
+          if (currentUser.value?.canAccessStudio) {
             workspaceMode.value = 'studio';
             switchStudioTab('overview');
             await refreshMenusAndOverview();
+          } else if (currentUser.value?.canManageTenants) {
+            workspaceMode.value = 'tenant_admin';
+            studioTab.value = 'iam';
+            openTabs.value = [];
+            window.location.hash = '#/tenant-admin';
+            await loadAllIam();
+          } else {
+            workspaceMode.value = 'runtime';
+            activeRuntimeModel.value = '';
+            window.location.hash = '#/runtime';
           }
         }
 
@@ -1830,12 +1875,14 @@
           return arr.map(a => a.displayName).join('、');
         });
 
+        const assignableApps = computed(() => currentUser.value?.isSystemAdmin ? businessAppsOnly.value : (currentUser.value?.authorizedApps || []));
+
         function lifecycleTagType(state) { if (state === 'ONLINE_ACTIVE') return 'success'; if (state === 'OFFLINE') return 'warning'; if (state === 'PURGE_PENDING') return 'danger'; return 'info'; }
         function friendlyLifecycleLabel(state) { const m = { ONLINE_ACTIVE: '已上线启用', OFFLINE: '已停用', PURGE_PENDING: '待审核清理', PURGED: '已清理' }; return m[state] || state; }
         function friendlyVersionStatus(st) { const m = { DRAFT: '草稿', VALIDATED: '检查通过', ACTIVE: '当前生效', RETIRED: '历史版本' }; return m[st] || st; }
         function friendlyViewType(t) { const m = { grid: '数据表格', search: '搜索栏', form: '录入表单' }; return m[t] || t; }
-        function friendlyRoleLabel(rc) { const m = { ROLE_ADMIN: '系统管理员', ROLE_DEVELOPER: '应用设计员', ROLE_PUBLISHER: '上线管理员', ROLE_APP_USER: '业务用户' }; return m[rc] || rc; }
-        function resolveAppDisplayName(appCode) { const found = appsList.value.find(a => a.name === appCode); return found ? found.displayName : appCode; }
+        function friendlyRoleLabel(rc) { const m = { ROLE_ADMIN: '系统管理员', ROLE_TENANT_ADMIN: '租户主管', ROLE_DEVELOPER: '应用设计员', ROLE_PUBLISHER: '上线管理员', ROLE_APP_USER: '业务用户' }; return m[rc] || rc; }
+        function resolveAppDisplayName(appCode) { const found = appsList.value.find(a => a.name === appCode) || (currentUser.value?.authorizedApps || []).find(a => a.name === appCode); return found ? found.displayName : appCode; }
         function resolveTenantName(tid) { const found = tenantsList.value.find(t => t.id === tid || t.code === tid); return found ? found.name : tid; }
         function getTenantsForApp(appName) { return tenantsList.value.filter(t => Array.isArray(t.authorizedApps) && (t.authorizedApps.includes('*') || t.authorizedApps.includes(appName))); }
 
@@ -1881,16 +1928,19 @@
           api_doc: '开放接口文档', rpc_console: '接口调试工具'
         };
         function switchStudioTab(tab) {
-          if (!currentUser.value?.canAccessStudio) return;
-          studioTab.value = tab; window.location.hash = '#/studio/' + tab;
-          ensureTab('studio:' + tab, STUDIO_TITLES[tab] || tab, 'studio', tab);
-          if (tab === 'overview') { loadStudioOverview(); loadPublishTimeline(); }
-          if (tab === 'views_menus') loadViewsAndMenus();
-          if (tab === 'governance') loadGovernanceLists();
-          if (tab === 'dict') loadDictTypes();
-          if (tab === 'code_rule') loadCodeRules();
-          if (tab === 'iam') loadAllIam();
-          if (tab === 'api_doc') loadApiCatalog();
+          if (currentUser.value?.canAccessStudio) {
+            studioTab.value = tab; window.location.hash = '#/studio/' + tab;
+            ensureTab('studio:' + tab, STUDIO_TITLES[tab] || tab, 'studio', tab);
+            if (tab === 'overview') { loadStudioOverview(); loadPublishTimeline(); }
+            if (tab === 'views_menus') loadViewsAndMenus();
+            if (tab === 'governance') loadGovernanceLists();
+            if (tab === 'dict') loadDictTypes();
+            if (tab === 'code_rule') loadCodeRules();
+            if (tab === 'iam') loadAllIam();
+            if (tab === 'api_doc') loadApiCatalog();
+          } else if (currentUser.value?.canManageTenants) {
+            studioTab.value = 'iam'; window.location.hash = '#/tenant-admin'; loadAllIam();
+          }
         }
         function goToStudioTab(tab) { if (!currentUser.value?.canAccessStudio) return; workspaceMode.value = 'studio'; switchStudioTab(tab); }
         function goToRuntimeHome() { activeRuntimeModel.value = ''; window.location.hash = '#/runtime'; }
@@ -1901,6 +1951,8 @@
             try { currentUser.value = await rpcCall('rbac_user', 'profile', {}); } catch (e) {}
             activeRuntimeModel.value = '';
             window.location.hash = '#/runtime';
+          } else if (mode === 'tenant_admin') {
+            studioTab.value = 'iam'; openTabs.value = []; window.location.hash = '#/tenant-admin'; await loadAllIam();
           } else { switchStudioTab(studioTab.value); await loadStudioOverview(); }
         }
         function findFirstLeafModel(nodes, targetApp = null) {
@@ -2046,26 +2098,32 @@
           } catch (e) {}
         }
         async function loadRolesAndCatalog() {
-          try { const [roles, cat] = await Promise.all([rpcCall('rbac_role', 'listRoles', {}), rpcCall('rbac_role', 'permissionCatalog', {})]); rolesList.value = roles || []; permissionCatalog.value = cat || []; } catch (e) {}
+          try {
+            const roles = await rpcCall('rbac_role', 'listRoles', {});
+            rolesList.value = roles || [];
+            if (currentUser.value?.isSystemAdmin) {
+              permissionCatalog.value = await rpcCall('rbac_role', 'permissionCatalog', {}) || [];
+            } else { permissionCatalog.value = []; }
+          } catch (e) {}
         }
-        function openTenantDialog(row) { tenantDialog.form = row ? { ...row } : { id: '', code: '', name: '', contactName: '', contactPhone: '', status: 'ACTIVE', authorizedApps: [] }; tenantDialog.visible = true; }
+        function openTenantDialog(row) { tenantDialog.form = row ? { ...row } : { id: '', code: '', name: '', parentTenantId: currentUser.value?.isSystemAdmin ? 'rbac_tenant_root' : (currentUser.value?.tenantId || ''), contactName: '', contactPhone: '', status: 'ACTIVE', authorizedApps: [] }; tenantDialog.visible = true; }
         async function saveTenant() { try { await rpcCall('rbac_tenant', 'saveTenant', { values: tenantDialog.form }); ElMessage.success('租户保存成功'); tenantDialog.visible = false; await loadAllIam(); } catch (e) { ElMessage.error(e.message); } }
         function openAuthAppsDialog(row) {
           authAppsDialog.tenantId = row.id; authAppsDialog.tenantName = row.name;
           const cur = Array.isArray(row.authorizedApps) ? row.authorizedApps : [];
-          authAppsDialog.allowAll = cur.includes('*'); authAppsDialog.selected = cur.filter(x => x !== '*'); authAppsDialog.visible = true;
+          authAppsDialog.allowAll = currentUser.value?.isSystemAdmin ? cur.includes('*') : false; authAppsDialog.selected = cur.filter(x => x !== '*'); authAppsDialog.visible = true;
         }
         async function saveAuthApps() {
           try {
-            await rpcCall('rbac_tenant', 'authorizeApps', { tenantId: authAppsDialog.tenantId, authorizedApps: authAppsDialog.allowAll ? ['*'] : authAppsDialog.selected });
+            await rpcCall('rbac_tenant', 'authorizeApps', { tenantId: authAppsDialog.tenantId, authorizedApps: (currentUser.value?.isSystemAdmin && authAppsDialog.allowAll) ? ['*'] : authAppsDialog.selected });
             ElMessage.success('租户应用授权已生效'); authAppsDialog.visible = false; await loadTenants();
           } catch (e) { ElMessage.error(e.message); }
         }
         async function openQuickUserForTenant(row) { iamFilterTenant.value = row.id; iamSubTab.value = 'users_orgs'; await loadOrgsAndUsers(); openUserDialog(null); }
-        function openOrgDialog(row) { orgDialog.form = row ? { ...row } : { id: '', tenantId: iamFilterTenant.value || 'rbac_tenant_root', parentId: orgsList.value[0]?.id || '', name: '', orgType: 'DEPT', sequence: 10 }; orgDialog.visible = true; }
+        function openOrgDialog(row) { const defTid = iamFilterTenant.value || currentUser.value?.tenantId || 'rbac_tenant_root'; orgDialog.form = row ? { ...row } : { id: '', tenantId: defTid, parentId: orgsList.value[0]?.id || '', name: '', orgType: 'DEPT', sequence: 10 }; orgDialog.visible = true; }
         async function saveOrg() { try { await rpcCall('rbac_org', 'saveOrg', { values: orgDialog.form }); ElMessage.success('部门保存成功'); orgDialog.visible = false; await loadOrgsAndUsers(); } catch (e) { ElMessage.error(e.message); } }
         async function deleteOrg(orgId) { try { await rpcCall('rbac_org', 'deleteOrg', { orgId }); ElMessage.success('部门已删除'); await loadOrgsAndUsers(); } catch (e) { ElMessage.error(e.message); } }
-        function openUserDialog(row) { userDialog.form = row ? { ...row, roleCodes: [...(row.roleCodes || [])] } : { id: '', username: '', displayName: '', tenantId: iamFilterTenant.value || 'rbac_tenant_root', orgId: orgsList.value[0]?.id || 'org_root', password: '', status: 'ACTIVE', roleCodes: ['ROLE_APP_USER'] }; userDialog.visible = true; }
+        function openUserDialog(row) { const defTid = iamFilterTenant.value || currentUser.value?.tenantId || 'rbac_tenant_root'; userDialog.form = row ? { ...row, roleCodes: [...(row.roleCodes || [])] } : { id: '', username: '', displayName: '', tenantId: defTid, orgId: orgsList.value.find(o => o.tenantId === defTid)?.id || orgsList.value[0]?.id || ('org_' + defTid), password: '', status: 'ACTIVE', roleCodes: ['ROLE_APP_USER'] }; userDialog.visible = true; }
         async function saveUser() { try { await rpcCall('rbac_user', 'saveUser', { values: userDialog.form }); ElMessage.success('账号保存成功'); userDialog.visible = false; await loadOrgsAndUsers(); } catch (e) { ElMessage.error(e.message); } }
         async function resetUserPassword(row) { try { const { value } = await ElMessageBox.prompt('请输入账号 [' + row.username + '] 的新密码：', '重置密码', { inputValue: '123456' }); await rpcCall('rbac_user', 'resetPassword', { userId: row.id, newPassword: value }); ElMessage.success('密码重置成功'); } catch (e) { if (e !== 'cancel') ElMessage.error(e.message); } }
         async function deleteUser(userId) { try { await ElMessageBox.confirm('确认删除该账号？', '确认', { type: 'warning' }); await rpcCall('rbac_user', 'deleteUser', { userId }); await loadOrgsAndUsers(); } catch (e) { if (e !== 'cancel') ElMessage.error(e.message); } }
@@ -2439,7 +2497,7 @@
           detailDrawer, switchDrawerToEdit, runtimeFormModal, runtimeFormSaving, addErModal, childEditModal, serviceParamsModal,
           designer, propAdvDialog, designerSaving, dataTypeOptions, versionCenter, viewEditor, menuEditor,
           purgeDialog, rpcConsole, rpcConsoleLoading,
-          businessModels, kernelModels, displayedModels, pendingPurgeCount, runtimeLeafMenusCount, authorizedAppLabelsText,
+          businessModels, kernelModels, displayedModels, pendingPurgeCount, runtimeLeafMenusCount, authorizedAppLabelsText, assignableApps,
           runtimeSearchColumns, runtimeGridColumns, runtimeGridTbar, runtimeRowButtons, runtimeFormColumns, runtimeFormTabs,
           applyTheme, activateTab, closeTab,
           lifecycleTagType, friendlyLifecycleLabel, friendlyVersionStatus, friendlyViewType, friendlyRoleLabel,

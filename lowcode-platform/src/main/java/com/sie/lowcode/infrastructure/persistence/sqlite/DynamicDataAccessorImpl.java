@@ -371,7 +371,11 @@ public class DynamicDataAccessorImpl implements DynamicDataAccessor {
         MetaContext ctx = MetaContext.current();
         if (ctx != null && !MetaContext.SUPERUSER.equals(ctx.getUserId())
                 && !KERNEL_TABLES.contains(snapshot.resolvedTableName())) {
-            if (ctx.getTenantId() != null && !ctx.getTenantId().isBlank()) {
+            if (ctx.getVisibleTenantIds() != null && !ctx.getVisibleTenantIds().isEmpty()) {
+                String ph = String.join(",", Collections.nCopies(ctx.getVisibleTenantIds().size(), "?"));
+                parts.add("tenant_id IN (" + ph + ")");
+                args.addAll(ctx.getVisibleTenantIds());
+            } else if (ctx.getTenantId() != null && !ctx.getTenantId().isBlank()) {
                 parts.add("tenant_id = ?");
                 args.add(ctx.getTenantId());
             }

@@ -127,12 +127,14 @@ public class SqliteIamRepository implements IamRepository {
     @Override
     public void saveTenant(TenantDef t) {
         String appsJson = writeJson(t.getAuthorizedApps());
+        String parentId = "rbac_tenant_root".equals(t.getId()) ? null
+                : ((t.getParentTenantId() == null || t.getParentTenantId().isBlank()) ? "rbac_tenant_root" : t.getParentTenantId());
         jdbcTemplate.update(
-                "INSERT INTO rbac_tenant (id, code, name, contact_name, contact_phone, status, authorized_apps_json, max_users, create_date) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+                "INSERT INTO rbac_tenant (id, code, name, contact_name, contact_phone, status, parent_tenant_id, authorized_apps_json, max_users, create_date) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
                         "ON CONFLICT(code) DO UPDATE SET name=excluded.name, contact_name=excluded.contact_name, " +
-                        "contact_phone=excluded.contact_phone, status=excluded.status, authorized_apps_json=excluded.authorized_apps_json, max_users=excluded.max_users",
-                t.getId(), t.getCode(), t.getName(), t.getContactName(), t.getContactPhone(), t.getStatus(), appsJson, t.getMaxUsers(), t.getCreateDate());
+                        "contact_phone=excluded.contact_phone, status=excluded.status, parent_tenant_id=excluded.parent_tenant_id, authorized_apps_json=excluded.authorized_apps_json, max_users=excluded.max_users",
+                t.getId(), t.getCode(), t.getName(), t.getContactName(), t.getContactPhone(), t.getStatus(), parentId, appsJson, t.getMaxUsers(), t.getCreateDate());
     }
 
     @Override
@@ -202,6 +204,7 @@ public class SqliteIamRepository implements IamRepository {
         t.setContactName((String) r.get("contact_name"));
         t.setContactPhone((String) r.get("contact_phone"));
         t.setStatus((String) r.get("status"));
+        t.setParentTenantId((String) r.get("parent_tenant_id"));
         t.setCreateDate((String) r.get("create_date"));
         if (r.get("max_users") instanceof Number n) t.setMaxUsers(n.intValue());
         try {

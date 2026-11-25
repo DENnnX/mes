@@ -11,6 +11,7 @@ public class TenantDef {
     private String contactName;
     private String contactPhone;
     private String status = "ACTIVE";
+    private String parentTenantId;
     private List<String> authorizedApps = new ArrayList<>(); // 空表示全部已安装应用可见（兼容默认根租户）
     private int maxUsers = 100;
     private String createDate;
@@ -27,6 +28,8 @@ public class TenantDef {
     public void setContactPhone(String contactPhone) { this.contactPhone = contactPhone; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public String getParentTenantId() { return parentTenantId; }
+    public void setParentTenantId(String parentTenantId) { this.parentTenantId = parentTenantId; }
     public List<String> getAuthorizedApps() { return authorizedApps; }
     public void setAuthorizedApps(List<String> authorizedApps) {
         this.authorizedApps = authorizedApps != null ? authorizedApps : new ArrayList<>();

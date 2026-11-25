@@ -833,5 +833,64 @@ public class LowCodePlatformIntegrationTests {
         requireResult(rpcCall(bWriterToken, "rbac_user", "changePassword",
                 Map.of("oldPassword", "init123", "newPassword", "bPass2026")));
         requireResult(rpcCall(null, "rbac_user", "login", Map.of("username", "b_writer", "password", "bPass2026")));
+
+        // (g) 分级租户管理员 (ROLE_TENANT_ADMIN) 严格边界隔离验证
+        requireResult(rpcCall(adminToken, "rbac_tenant", "saveTenant",
+                Map.of("values", Map.of("id", "hq_corp", "code", "hq_corp", "name", "测试企业总部", "parentTenantId", "rbac_tenant_root"))));
+        requireResult(rpcCall(adminToken, "rbac_tenant", "authorizeApps",
+                Map.of("tenantId", "hq_corp", "authorizedApps", List.of("foundation_qa_app"))));
+        requireResult(rpcCall(adminToken, "rbac_user", "saveUser", Map.of("values", Map.of(
+                "id", "usr_hq_mgr", "username", "hq_mgr", "displayName", "企业总部主管",
+                "tenantId", "hq_corp", "password", "123456", "roleCodes", List.of("ROLE_TENANT_ADMIN")
+        ))));
+        requireResult(rpcCall(adminToken, "rbac_tenant", "saveTenant",
+                Map.of("values", Map.of("id", "sub_branch", "code", "sub_branch", "name", "下属分站", "parentTenantId", "hq_corp"))));
+
+        Map<String, Object> hqLogin = requireResult(rpcCall(null, "rbac_user", "login",
+                Map.of("username", "hq_mgr", "password", "123456")));
+        assertThat((Boolean) hqLogin.get("canAccessStudio")).isFalse();
+        assertThat((Boolean) hqLogin.get("canManageTenants")).isTrue();
+        assertThat((Boolean) hqLogin.get("isSystemAdmin")).isFalse();
+        String hqToken = (String) hqLogin.get("token");
+
+        // 1) hq_mgr 只能看到自己及下属租户与账号，不可见 admin / user / tenant_b
+        List<Map<String, Object>> hqTenants = requireResult(rpcCall(hqToken, "rbac_tenant", "listTenants", null));
+        assertThat(hqTenants).extracting(t -> t.get("id")).containsExactlyInAnyOrder("hq_corp", "sub_branch");
+        List<Map<String, Object>> hqUsers = requireResult(rpcCall(hqToken, "rbac_user", "listUsers", null));
+        assertThat(hqUsers).extracting(u -> u.get("username")).containsOnly("hq_mgr");
+
+        // 2) hq_mgr 禁止调用根平台开发、建表、字典、角色及清理等管理接口 (-32001)
+        requireError(rpcCall(hqToken, "meta_app", "save", Map.of("app", Map.of("name", "bad", "displayName", "bad"))), -32001);
+        requireError(rpcCall(hqToken, "meta_dict", "saveType", Map.of("values", Map.of("typeCode", "BAD", "name", "BAD"))), -32001);
+        requireError(rpcCall(hqToken, "rbac_role", "saveRole", Map.of("values", Map.of("code", "ROLE_BAD", "name", "bad"))), -32001);
+
+        // 3) hq_mgr 禁止操作根系统或其他企业的账号/租户，禁止赋予 ROLE_ADMIN (-32001)
+        requireError(rpcCall(hqToken, "rbac_user", "resetPassword", Map.of("userId", "usr_admin", "newPassword", "hack")), -32001);
+        requireError(rpcCall(hqToken, "rbac_user", "saveUser", Map.of("values", Map.of(
+                "username", "evil", "tenantId", "sub_branch", "roleCodes", List.of("ROLE_ADMIN")))), -32001);
+        requireError(rpcCall(hqToken, "rbac_tenant", "authorizeApps",
+                Map.of("tenantId", "tenant_b", "authorizedApps", List.of("foundation_qa_app"))), -32001);
+        // 禁止给下属授出总部自己未获授权的应用 ext_qa_app 或通配符 "*" (-32001)
+        requireError(rpcCall(hqToken, "rbac_tenant", "authorizeApps",
+                Map.of("tenantId", "sub_branch", "authorizedApps", List.of("ext_qa_app"))), -32001);
+        requireError(rpcCall(hqToken, "rbac_tenant", "authorizeApps",
+                Map.of("tenantId", "hq_corp", "authorizedApps", List.of("foundation_qa_app"))), -32001);
+
+        // 4) hq_mgr 正常给下属 sub_branch 授权 foundation_qa_app 并创建下级业务账号 sub_u1
+        requireResult(rpcCall(hqToken, "rbac_tenant", "authorizeApps",
+                Map.of("tenantId", "sub_branch", "authorizedApps", List.of("foundation_qa_app"))));
+        requireResult(rpcCall(hqToken, "rbac_user", "saveUser", Map.of("values", Map.of(
+                "username", "sub_u1", "displayName", "分站业务员", "tenantId", "sub_branch",
+                "password", "123456", "roleCodes", List.of("ROLE_APP_USER")
+        ))));
+        Map<String, Object> subLogin = requireResult(rpcCall(null, "rbac_user", "login",
+                Map.of("username", "sub_u1", "password", "123456")));
+        String subToken = (String) subLogin.get("token");
+
+        // 5) 业务数据层级边界：sub_u1 新建一条工单，hq_mgr 可看下属且不可见 root(user) 与 tenant_b 数据；sub_u1 只见自己的
+        requireResult(rpcCall(subToken, "qa_ticket", "create", Map.of("values", Map.of("title", "分站专属工单1"))));
+        Map<String, Object> hqVisible = requireResult(rpcCall(hqToken, "qa_ticket", "search", Map.of("filter", Collections.emptyList())));
+        assertThat((List<Map<String, Object>>) hqVisible.get("records"))
+                .extracting(r -> r.get("title")).containsExactly("分站专属工单1");
     }
 }

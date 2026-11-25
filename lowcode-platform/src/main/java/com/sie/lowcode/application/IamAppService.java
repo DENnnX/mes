@@ -51,6 +51,7 @@ public class IamAppService {
                 && (user.getRoleCodes().contains("ROLE_ADMIN")
                 || user.getRoleCodes().contains("ROLE_DEVELOPER")
                 || user.getRoleCodes().contains("ROLE_PUBLISHER"));
+        boolean canManageTenants = isRootAdmin || user.getRoleCodes().contains("ROLE_TENANT_ADMIN");
 
         Set<String> allowedAppNames = isRootAdmin ? null : resolveAllowedAppNames(tenantId);
         List<Map<String, Object>> authorizedAppsDetail = buildAuthorizedAppList(allowedAppNames);
@@ -88,6 +89,7 @@ public class IamAppService {
         result.put("tenant", tenant);
         result.put("authorizedApps", authorizedAppsDetail);
         result.put("canAccessStudio", canAccessStudio);
+        result.put("canManageTenants", canManageTenants);
         result.put("isSystemAdmin", isRootAdmin);
         if (targetApp != null && !targetApp.isBlank()) {
             result.put("targetApp", targetApp.trim());
@@ -105,6 +107,7 @@ public class IamAppService {
                 && (user.getRoleCodes().contains("ROLE_ADMIN")
                 || user.getRoleCodes().contains("ROLE_DEVELOPER")
                 || user.getRoleCodes().contains("ROLE_PUBLISHER"));
+        boolean canManageTenants = isRootAdmin || user.getRoleCodes().contains("ROLE_TENANT_ADMIN");
         Set<String> allowed = isRootAdmin ? null : resolveAllowedAppNames(tenantId);
 
         Map<String, Object> profile = sanitizeUser(user);
@@ -112,6 +115,7 @@ public class IamAppService {
         profile.put("tenantName", tenant != null ? tenant.getName() : tenantId);
         profile.put("authorizedApps", buildAuthorizedAppList(allowed));
         profile.put("canAccessStudio", canAccessStudio);
+        profile.put("canManageTenants", canManageTenants);
         profile.put("isSystemAdmin", isRootAdmin);
         return profile;
     }
@@ -199,16 +203,68 @@ public class IamAppService {
         return iamRepository.findRolesByCodes(roleCodes);
     }
 
+    // ==================== 分级租户管理边界辅助 ====================
+
+    private UserAccount currentActor() {
+        MetaContext ctx = MetaContext.current();
+        if (ctx == null || MetaContext.SUPERUSER.equals(ctx.getUserId())) {
+            return null;
+        }
+        return iamRepository.findUserById(ctx.getUserId()).orElse(null);
+    }
+
+    private boolean isRootSystemAdmin(UserAccount actor) {
+        if (actor == null) return true;
+        String tid = (actor.getTenantId() == null || actor.getTenantId().isBlank())
+                ? MetaContext.DEFAULT_TENANT : actor.getTenantId();
+        return MetaContext.DEFAULT_TENANT.equals(tid) && actor.getRoleCodes().contains("ROLE_ADMIN");
+    }
+
+    /**
+     * 解析当前操作者有权管理的租户 ID 集合：
+     * - 根系统管理员返回 null（全部租户）
+     * - 租户主管 (ROLE_TENANT_ADMIN) 返回自身所属租户 + 所有递归下属分站租户
+     * - 普通员工返回空集合
+     */
+    public Set<String> resolveManagedTenantIds(UserAccount actor) {
+        if (isRootSystemAdmin(actor)) return null;
+        if (!actor.getRoleCodes().contains("ROLE_TENANT_ADMIN")) return Collections.emptySet();
+        String rootId = (actor.getTenantId() == null || actor.getTenantId().isBlank())
+                ? MetaContext.DEFAULT_TENANT : actor.getTenantId();
+        List<TenantDef> all = iamRepository.findAllTenants();
+        Set<String> managed = new LinkedHashSet<>();
+        managed.add(rootId);
+        Deque<String> queue = new ArrayDeque<>();
+        queue.add(rootId);
+        while (!queue.isEmpty()) {
+            String cur = queue.poll();
+            for (TenantDef t : all) {
+                if (Objects.equals(cur, t.getParentTenantId()) && managed.add(t.getId())) {
+                    queue.add(t.getId());
+                }
+            }
+        }
+        return managed;
+    }
+
     public List<Map<String, Object>> listUsers() {
         return listUsers(null);
     }
 
     public List<Map<String, Object>> listUsers(String tenantId) {
+        UserAccount actor = currentActor();
+        Set<String> managed = resolveManagedTenantIds(actor);
         List<Map<String, Object>> res = new ArrayList<>();
+        if (managed != null && managed.isEmpty()) {
+            return res;
+        }
         List<UserAccount> users = (tenantId != null && !tenantId.isBlank())
                 ? iamRepository.findUsersByTenant(tenantId)
                 : iamRepository.findAllUsers();
         for (UserAccount u : users) {
+            String uTenant = (u.getTenantId() == null || u.getTenantId().isBlank())
+                    ? MetaContext.DEFAULT_TENANT : u.getTenantId();
+            if (managed != null && !managed.contains(uTenant)) continue;
             res.add(sanitizeUser(u));
         }
         return res;
@@ -218,6 +274,10 @@ public class IamAppService {
         if (account.getUsername() == null || account.getUsername().isBlank()) {
             throw DomainException.invalidParams("用户名不能为空");
         }
+        UserAccount actor = currentActor();
+        boolean rootAdmin = isRootSystemAdmin(actor);
+        Set<String> managed = resolveManagedTenantIds(actor);
+
         Optional<UserAccount> existing = Optional.empty();
         if (account.getId() != null && !account.getId().isBlank()) {
             existing = iamRepository.findUserById(account.getId());
@@ -225,6 +285,30 @@ public class IamAppService {
         if (existing.isEmpty()) {
             existing = iamRepository.findUserByUsername(account.getUsername().trim());
         }
+
+        if (!rootAdmin) {
+            if (managed == null || managed.isEmpty()) {
+                throw DomainException.permissionDenied("权限拒绝：仅管理员或企业主管可管理账号");
+            }
+            if (existing.isPresent()) {
+                String oldTenant = existing.get().getTenantId() != null ? existing.get().getTenantId() : MetaContext.DEFAULT_TENANT;
+                if (!managed.contains(oldTenant) || "usr_admin".equals(existing.get().getId())) {
+                    throw DomainException.permissionDenied("越权拒绝：无权修改根系统或其他企业的账号");
+                }
+            }
+            if (account.getTenantId() == null || account.getTenantId().isBlank()) {
+                account.setTenantId(actor.getTenantId());
+            }
+            if (!managed.contains(account.getTenantId())) {
+                throw DomainException.permissionDenied("越权拒绝：仅可将账号分配到本租户或下属分站");
+            }
+            if (account.getRoleCodes().contains("ROLE_ADMIN")
+                    || account.getRoleCodes().contains("ROLE_DEVELOPER")
+                    || account.getRoleCodes().contains("ROLE_PUBLISHER")) {
+                throw DomainException.permissionDenied("越权拒绝：租户主管无权授予平台系统级角色");
+            }
+        }
+
         if (account.getId() == null || account.getId().isBlank()) {
             account.setId(existing.map(UserAccount::getId)
                     .orElse("usr_" + UUID.randomUUID().toString().substring(0, 8)));
@@ -239,7 +323,7 @@ public class IamAppService {
             account.setTenantId("rbac_tenant_root");
         }
         if (account.getOrgId() == null || account.getOrgId().isBlank()) {
-            account.setOrgId("org_root");
+            account.setOrgId("org_" + account.getTenantId());
         }
         iamRepository.saveUser(account);
         return sanitizeUser(account);
@@ -251,6 +335,14 @@ public class IamAppService {
         }
         UserAccount u = iamRepository.findUserById(userId)
                 .orElseThrow(() -> DomainException.invalidParams("用户不存在: " + userId));
+        UserAccount actor = currentActor();
+        if (!isRootSystemAdmin(actor)) {
+            Set<String> managed = resolveManagedTenantIds(actor);
+            String uTenant = u.getTenantId() != null ? u.getTenantId() : MetaContext.DEFAULT_TENANT;
+            if (!managed.contains(uTenant) || "usr_admin".equals(u.getId())) {
+                throw DomainException.permissionDenied("越权拒绝：无权重置其他企业或平台管理员密码");
+            }
+        }
         u.setPassword(newPassword);
         iamRepository.saveUser(u);
         return Map.of("reset", true, "userId", userId, "username", u.getUsername());
@@ -277,12 +369,35 @@ public class IamAppService {
         if ("usr_admin".equals(userId)) {
             throw DomainException.stateGuardFailed("系统默认主管理员账号禁止删除");
         }
+        UserAccount actor = currentActor();
+        if (!isRootSystemAdmin(actor)) {
+            UserAccount target = iamRepository.findUserById(userId)
+                    .orElseThrow(() -> DomainException.invalidParams("用户不存在: " + userId));
+            if (actor.getId().equals(userId)) {
+                throw DomainException.stateGuardFailed("禁止删除当前登录的本人账号");
+            }
+            Set<String> managed = resolveManagedTenantIds(actor);
+            String tTenant = target.getTenantId() != null ? target.getTenantId() : MetaContext.DEFAULT_TENANT;
+            if (!managed.contains(tTenant)) {
+                throw DomainException.permissionDenied("越权拒绝：无权删除其他企业或根系统账号");
+            }
+        }
         iamRepository.deleteUser(userId);
         return Map.of("deleted", true, "userId", userId);
     }
 
     public List<RoleDef> listRoles() {
-        return iamRepository.findAllRoles();
+        List<RoleDef> all = iamRepository.findAllRoles();
+        UserAccount actor = currentActor();
+        if (isRootSystemAdmin(actor)) return all;
+        List<RoleDef> filtered = new ArrayList<>();
+        for (RoleDef r : all) {
+            if ("ROLE_ADMIN".equals(r.getCode()) || "ROLE_DEVELOPER".equals(r.getCode()) || "ROLE_PUBLISHER".equals(r.getCode())) {
+                continue;
+            }
+            filtered.add(r);
+        }
+        return filtered;
     }
 
     public RoleDef saveRole(RoleDef role) {
@@ -306,7 +421,15 @@ public class IamAppService {
 
     // --- 多租户管理 ---
     public List<TenantDef> listTenants() {
-        return iamRepository.findAllTenants();
+        List<TenantDef> all = iamRepository.findAllTenants();
+        UserAccount actor = currentActor();
+        Set<String> managed = resolveManagedTenantIds(actor);
+        if (managed == null) return all;
+        List<TenantDef> res = new ArrayList<>();
+        for (TenantDef t : all) {
+            if (managed.contains(t.getId())) res.add(t);
+        }
+        return res;
     }
 
     public Optional<TenantDef> findTenantById(String tenantId) {
@@ -325,6 +448,35 @@ public class IamAppService {
         if (t.getCreateDate() == null || t.getCreateDate().isBlank()) {
             t.setCreateDate(TS_FMT.format(LocalDateTime.now()));
         }
+
+        UserAccount actor = currentActor();
+        if (!isRootSystemAdmin(actor)) {
+            Set<String> managed = resolveManagedTenantIds(actor);
+            if (managed.isEmpty()) {
+                throw DomainException.permissionDenied("权限拒绝：仅管理员或企业主管可管理租户");
+            }
+            Optional<TenantDef> existingOpt = findTenantById(t.getId());
+            if (existingOpt.isPresent()) {
+                TenantDef ex = existingOpt.get();
+                if (!managed.contains(ex.getId())) {
+                    throw DomainException.permissionDenied("越权拒绝：无权修改非本企业及其下属分站之外的租户");
+                }
+                // 保持既有上级层级关系，禁止自我修改已授权应用范围
+                t.setParentTenantId(ex.getParentTenantId());
+                if (Objects.equals(ex.getId(), actor.getTenantId())) {
+                    t.setAuthorizedApps(ex.getAuthorizedApps());
+                } else {
+                    validateDelegatedApps(actor.getTenantId(), t.getAuthorizedApps());
+                }
+            } else {
+                // 下级新建分站，强制挂在当前总部租户名下
+                if (t.getParentTenantId() == null || t.getParentTenantId().isBlank() || !managed.contains(t.getParentTenantId())) {
+                    t.setParentTenantId(actor.getTenantId());
+                }
+                validateDelegatedApps(actor.getTenantId(), t.getAuthorizedApps());
+            }
+        }
+
         iamRepository.saveTenant(t);
         // 若该租户下尚未建立根组织，自动初始化一个组织根节点
         if (iamRepository.findOrgsByTenant(t.getId()).isEmpty()) {
@@ -339,9 +491,29 @@ public class IamAppService {
         return t;
     }
 
+    private void validateDelegatedApps(String parentTenantId, List<String> delegatedApps) {
+        if (delegatedApps == null || delegatedApps.isEmpty()) return;
+        for (String app : delegatedApps) {
+            if ("*".equals(app)) {
+                throw DomainException.permissionDenied("越权拒绝：租户主管无权向下级授予全部应用通配权限 (*)");
+            }
+            if (!isAppAuthorizedForTenant(parentTenantId, app)) {
+                throw DomainException.permissionDenied("越权拒绝：应用 [" + app + "] 不在本总部的已授权范围内");
+            }
+        }
+    }
+
     public TenantDef authorizeApps(String tenantId, List<String> authorizedApps) {
         TenantDef tenant = findTenantById(tenantId)
                 .orElseThrow(() -> DomainException.invalidParams("租户不存在: " + tenantId));
+        UserAccount actor = currentActor();
+        if (!isRootSystemAdmin(actor)) {
+            Set<String> managed = resolveManagedTenantIds(actor);
+            if (!managed.contains(tenant.getId()) || Objects.equals(tenant.getId(), actor.getTenantId())) {
+                throw DomainException.permissionDenied("越权拒绝：仅可为下属分站/租户授权，无权修改自身或其他企业租户授权");
+            }
+            validateDelegatedApps(actor.getTenantId(), authorizedApps);
+        }
         tenant.setAuthorizedApps(authorizedApps != null ? authorizedApps : new ArrayList<>());
         iamRepository.saveTenant(tenant);
         return tenant;
@@ -349,7 +521,16 @@ public class IamAppService {
 
     // --- 组织架构树管理 ---
     public List<OrgNode> listOrgs(String tenantId) {
-        return iamRepository.findOrgsByTenant(tenantId);
+        UserAccount actor = currentActor();
+        Set<String> managed = resolveManagedTenantIds(actor);
+        if (managed != null && managed.isEmpty()) return Collections.emptyList();
+        List<OrgNode> orgs = iamRepository.findOrgsByTenant(tenantId);
+        if (managed == null) return orgs;
+        List<OrgNode> res = new ArrayList<>();
+        for (OrgNode o : orgs) {
+            if (managed.contains(o.getTenantId())) res.add(o);
+        }
+        return res;
     }
 
     public OrgNode saveOrg(OrgNode org) {
@@ -359,8 +540,15 @@ public class IamAppService {
         if (org.getId() == null || org.getId().isBlank()) {
             org.setId("org_" + UUID.randomUUID().toString().substring(0, 8));
         }
+        UserAccount actor = currentActor();
         if (org.getTenantId() == null || org.getTenantId().isBlank()) {
-            org.setTenantId("rbac_tenant_root");
+            org.setTenantId(!isRootSystemAdmin(actor) && actor.getTenantId() != null ? actor.getTenantId() : "rbac_tenant_root");
+        }
+        if (!isRootSystemAdmin(actor)) {
+            Set<String> managed = resolveManagedTenantIds(actor);
+            if (!managed.contains(org.getTenantId())) {
+                throw DomainException.permissionDenied("越权拒绝：无权操作其他企业或根系统的部门组织");
+            }
         }
         iamRepository.saveOrg(org);
         return org;
@@ -370,7 +558,16 @@ public class IamAppService {
         if ("org_root".equals(orgId)) {
             throw DomainException.stateGuardFailed("平台默认根组织禁止删除");
         }
-        for (OrgNode child : iamRepository.findOrgsByTenant(null)) {
+        UserAccount actor = currentActor();
+        List<OrgNode> allOrgs = iamRepository.findOrgsByTenant(null);
+        if (!isRootSystemAdmin(actor)) {
+            Set<String> managed = resolveManagedTenantIds(actor);
+            OrgNode target = allOrgs.stream().filter(o -> Objects.equals(orgId, o.getId())).findFirst().orElse(null);
+            if (target != null && !managed.contains(target.getTenantId())) {
+                throw DomainException.permissionDenied("越权拒绝：无权删除其他企业或根系统的部门组织");
+            }
+        }
+        for (OrgNode child : allOrgs) {
             if (Objects.equals(orgId, child.getParentId())) {
                 throw DomainException.stateGuardFailed("组织节点下仍存在子部门 [" + child.getName() + "]，禁止直接删除");
             }

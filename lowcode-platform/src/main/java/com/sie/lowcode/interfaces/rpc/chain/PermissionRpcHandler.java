@@ -22,12 +22,13 @@ public class PermissionRpcHandler implements RpcHandler {
     private static final Set<String> AUTH_SELF_METHODS = Set.of(
             "rbac_user.profile", "rbac_user.changePassword", "auth.profile", "auth.changePassword");
     private static final Set<String> ADMIN_ONLY = Set.of(
-            "confirmPurge", "rejectPurge", "saveUser", "deleteUser", "resetPassword",
-            "saveRole", "deleteRole", "saveTenant", "authorizeApps");
+            "confirmPurge", "rejectPurge", "saveRole", "deleteRole");
+    private static final Set<String> TENANT_ADMIN_OR_ROOT = Set.of(
+            "saveUser", "deleteUser", "resetPassword", "saveTenant", "authorizeApps", "saveOrg", "deleteOrg");
     private static final Set<String> PUBLISHER_REQ = Set.of("publish", "rollback", "offline", "online", "applyPurge");
     private static final Set<String> DEV_REQ = Set.of(
             "saveDraft", "checkImpact", "buildDefaultViews", "importPackage", "saveView", "saveMenu",
-            "saveType", "deleteType", "saveItem", "deleteItem", "saveRule", "deleteRule", "saveOrg", "deleteOrg");
+            "saveType", "deleteType", "saveItem", "deleteItem", "saveRule", "deleteRule");
 
     private final MetaContainerMemoryRegistry registry;
     private final IamAppService iamAppService;
@@ -59,13 +60,22 @@ public class PermissionRpcHandler implements RpcHandler {
                     "访问拒绝：当前租户未被授权使用应用 [" + snap.getAppName() + "]，请联系系统管理员授权");
         }
 
-        if (isRootAdmin || meta.isSuperUser()) {
+        if (isRootAdmin || MetaContext.SUPERUSER.equals(meta.getUserId())) {
             return next.proceed(ctx);
         }
 
         String svc = ctx.getService();
-        if (ADMIN_ONLY.contains(svc) && !meta.hasRole("ROLE_ADMIN")) {
-            throw DomainException.permissionDenied("操作拒绝：服务 [" + svc + "] 仅限平台管理员 (ROLE_ADMIN) 执行");
+        if ("meta_app.save".equals(fullKey) && !meta.hasRole("ROLE_DEVELOPER") && !isRootAdmin) {
+            throw DomainException.permissionDenied("操作拒绝：应用创建/编辑仅限平台根管理员或开发者执行");
+        }
+        if (ADMIN_ONLY.contains(svc) && !isRootAdmin) {
+            throw DomainException.permissionDenied("操作拒绝：服务 [" + svc + "] 仅限平台根系统管理员 (ROLE_ADMIN) 执行");
+        }
+        if (TENANT_ADMIN_OR_ROOT.contains(svc)
+                && !isRootAdmin
+                && !meta.hasRole("ROLE_TENANT_ADMIN")
+                && !(("saveOrg".equals(svc) || "deleteOrg".equals(svc)) && meta.hasRole("ROLE_DEVELOPER"))) {
+            throw DomainException.permissionDenied("操作拒绝：服务 [" + svc + "] 仅限系统管理员或企业租户主管执行");
         }
         if (PUBLISHER_REQ.contains(svc) && !meta.hasRole("ROLE_PUBLISHER") && !meta.hasRole("ROLE_ADMIN")) {
             throw DomainException.permissionDenied("操作拒绝：服务 [" + svc + "] 需要发布管理员 (ROLE_PUBLISHER) 权限");

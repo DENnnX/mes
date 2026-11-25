@@ -111,6 +111,23 @@ public class PlatformKernelBootstrap {
             iamAppService.saveRole(userRole);
         }
 
+        if (iamAppService.listRoles().stream().noneMatch(r -> "ROLE_TENANT_ADMIN".equals(r.getCode()))) {
+            com.sie.lowcode.domain.iam.RoleDef tAdminRole = new com.sie.lowcode.domain.iam.RoleDef();
+            tAdminRole.setId("role_tenant_admin");
+            tAdminRole.setCode("ROLE_TENANT_ADMIN");
+            tAdminRole.setName("企业/分站主管 (本租户及下属分站授权与账号管理)");
+            tAdminRole.setDataScope("ALL");
+            tAdminRole.setAllowedServices(Set.of(
+                    "*:search", "*:count", "*:exists", "*:find", "*:create", "*:update", "*:delete",
+                    "*:lookup", "*:action", "*:addMissingDefaultValues", "*:getSelectionOptions",
+                    "ui_*:*", "meta_dict:itemsByType", "meta_dict:listTypes", "meta_code_rule:generateCode",
+                    "meta_file:*",
+                    "rbac_tenant:listTenants", "rbac_tenant:search", "rbac_tenant:saveTenant", "rbac_tenant:authorizeApps",
+                    "rbac_user:listUsers", "rbac_user:search", "rbac_user:saveUser", "rbac_user:resetPassword", "rbac_user:deleteUser",
+                    "rbac_org:*", "rbac_role:listRoles", "rbac_role:search"));
+            iamAppService.saveRole(tAdminRole);
+        }
+
         if (iamAppService.listUsers().isEmpty()) {
             createUser("usr_admin", "admin", "系统管理员 (Admin)", "123456", Set.of("ROLE_ADMIN", "ROLE_DEVELOPER", "ROLE_PUBLISHER"));
             createUser("usr_app", "user", "示例业务用户 (User)", "123456", Set.of("ROLE_APP_USER"));
