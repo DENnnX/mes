@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lowcode.sie.edu.cn/schemas/app-package-schema.json",
+  "title": "Model-Driven Low-Code App Package Schema",
+  "description": "统一描述应用、模型、属性、服务、视图（Grid/Search/Form）与树形菜单的声明式 JSON 规范（对齐 sie-snest-engine / iidp-backend-demo）",
+  "type": "object",
+  "required": ["app", "models"],
+  "properties": {
+    "app": {
+      "type": "object",
+      "required": ["name", "displayName"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "displayName": { "type": "string" },
+        "category": { "type": "string", "default": "custom" },
+        "version": { "type": "string", "default": "1.0.0" },
+        "tag": { "type": "string", "default": "master" },
+        "description": { "type": "string" },
+        "dependencies": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "models": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "displayName", "properties"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "displayName": { "type": "string" },
+          "tableName": { "type": "string" },
+          "description": { "type": "string" },
+          "versionNo": { "type": "string", "default": "1.0.0" },
+          "parents": { "type": "array", "items": { "type": "string" } },
+          "extendModel": { "type": "string" },
+          "abstractModel": { "type": "boolean", "default": false },
+          "autoLog": { "type": "boolean", "default": true },
+          "logicDelete": { "type": "boolean", "default": false },
+          "orderBy": { "type": "string", "default": "create_date desc" },
+          "displayFormat": { "type": "string" },
+          "dataScope": { "type": "string", "enum": ["ALL", "SELF"], "default": "ALL" },
+          "indexes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["columnList"],
+              "properties": {
+                "name": { "type": "string" },
+                "columnList": { "type": "array", "items": { "type": "string" } },
+                "unique": { "type": "boolean", "default": false }
+              }
+            }
+          },
+          "properties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "displayName", "dataType"],
+              "properties": {
+                "name": { "type": "string" },
+                "columnName": { "type": "string" },
+                "displayName": { "type": "string" },
+                "tooltips": { "type": "string" },
+                "dataType": {
+                  "type": "string",
+                  "enum": ["String", "Text", "Integer", "Long", "Double", "BigDecimal", "Decimal", "Boolean", "Date", "DateTime", "Selection", "Dict", "ManyToOne", "OneToMany", "ManyToMany", "Json", "File"]
+                },
+                "length": { "type": "integer" },
+                "scale": { "type": "integer" },
+                "required": { "type": "boolean", "default": false },
+                "readonly": { "type": "boolean", "default": false },
+                "unique": { "type": "boolean", "default": false },
+                "store": { "type": "boolean", "default": true },
+                "display": { "type": "boolean", "default": true },
+                "displayForModel": { "type": "boolean", "default": false },
+                "defaultValue": {},
+                "defaultMethod": { "type": "string" },
+                "widget": { "type": "string" },
+                "multiple": { "type": "boolean", "default": false },
+                "selectionMethod": { "type": "string" },
+                "dictType": { "type": "string" },
+                "related": { "type": "string" },
+                "computeMethod": { "type": "string" },
+                "computeScript": { "type": "string" },
+                "codeRule": { "type": "string" },
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["label", "value"],
+                    "properties": {
+                      "label": { "type": "string" },
+                      "value": { "type": "string" },
+                      "color": { "type": "string" }
+                    }
+                  }
+                },
+                "relateModel": { "type": "string" },
+                "inverseName": { "type": "string" },
+                "onDelete": { "type": "string", "enum": ["RESTRICT", "SET_NULL", "CASCADE"], "default": "RESTRICT" },
+                "joinTable": { "type": "string" },
+                "joinColumn": { "type": "string" },
+                "inverseJoinColumn": { "type": "string" },
+                "minValue": { "type": "number" },
+                "maxValue": { "type": "number" },
+                "minLength": { "type": "integer" },
+                "maxLength": { "type": "integer" },
+                "email": { "type": "boolean", "default": false },
+                "contentType": { "type": "string" },
+                "validationRegex": { "type": "string" },
+                "validationMessage": { "type": "string" }
+              }
+            }
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "type"],
+              "properties": {
+                "name": { "type": "string" },
+                "displayName": { "type": "string" },
+                "type": { "type": "string", "enum": ["GROOVY_SCRIPT", "STATE_TRANSITION", "JAVA_EXTENSION"] },
+                "auth": { "type": "string" },
+                "description": { "type": "string" },
+                "scriptContent": { "type": "string" },
+                "transitionRule": { "type": "object" },
+                "paramsSchema": { "type": "array" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "views": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["name", "model", "type", "body"],
+        "properties": {
+          "name": { "type": "string" },
+          "model": { "type": "string" },
+          "type": { "type": "string", "enum": ["grid", "search", "form"] },
+          "mode": { "type": "string", "enum": ["primary", "extension"], "default": "primary" },
+          "body": { "type": "object" }
+        }
+      }
+    },
+    "menus": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["name", "display_name"],
+        "properties": {
+          "name": { "type": "string" },
+          "display_name": { "type": "string" },
+          "icon": { "type": "string" },
+          "model": { "type": "string" },
+          "view": { "type": "string" },
+          "sequence": { "type": "integer" },
+          "active": { "type": "boolean", "default": true },
+          "filter": { "type": "string" },
+          "parent_ids": {}
+        }
+      }
+    }
+  }
+}

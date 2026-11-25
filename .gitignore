@@ -1,0 +1,26 @@
+# 教师参考工程（独立 .git 仓库，含大体积二进制 JAR，不纳入本项目推送）
+iidp-backend-demo/
+
+# Maven 构建产物
+target/
+**/target/
+*.jar
+*.war
+*.ear
+*.class
+*.log
+
+# 运行时数据库与上传附件
+data/
+**/data/
+uploads/
+*.db
+*.db-shm
+*.db-wal
+
+# IDE 与操作系统临时文件
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db

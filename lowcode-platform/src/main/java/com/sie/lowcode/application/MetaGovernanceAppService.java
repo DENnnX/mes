@@ -1,0 +1,841 @@
+package com.sie.lowcode.application;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sie.lowcode.domain.metamodel.model.*;
+import com.sie.lowcode.domain.metamodel.repository.*;
+import com.sie.lowcode.domain.metamodel.service.*;
+import com.sie.lowcode.domain.runtime.DynamicDataAccessor;
+import com.sie.lowcode.domain.runtime.RecordData;
+import com.sie.lowcode.domain.shared.DomainException;
+import com.sie.lowcode.domain.shared.MetaContext;
+import com.sie.lowcode.domain.uischema.*;
+import com.sie.lowcode.infrastructure.container.MetaContainerMemoryRegistry;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+
+/**
+ * 元模型全生命周期治理应用服务（对应 Dev Center + App Store + Governance）：
+ * - 应用包 JSON 导入 / 导出
+ * - 在线模型草稿维护、自动生成三件套默认视图 (buildDefaultViews)
+ * - 变更影响分析 (checkImpact)、显式发布 (publish) 与 DDL 同步、兼容回滚 (rollback)
+ * - 模型受控下线 (offline)、数据导出凭据签发、异人双审永久清除 (applyPurge -> confirmPurge)
+ */
+@Service
+public class MetaGovernanceAppService {
+    private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    private final AppRepository appRepo;
+    private final ModelRepository modelRepo;
+    private final UiSchemaRepository uiRepo;
+    private final GovernanceRepository govRepo;
+    private final DynamicDataAccessor dataAccessor;
+    private final MetaContainerMemoryRegistry memoryRegistry;
+    private final ObjectMapper objectMapper;
+
+    private final MetaValidationDomainService validationService = new MetaValidationDomainService();
+    private final ReferenceAnalyzerDomainService refAnalyzer = new ReferenceAnalyzerDomainService();
+    private final DefaultViewGeneratorService viewGenerator = new DefaultViewGeneratorService();
+    private final ModelInheritanceDomainService inheritanceService = new ModelInheritanceDomainService();
+
+    public MetaGovernanceAppService(AppRepository appRepo,
+                                    ModelRepository modelRepo,
+                                    UiSchemaRepository uiRepo,
+                                    GovernanceRepository govRepo,
+                                    DynamicDataAccessor dataAccessor,
+                                    MetaContainerMemoryRegistry memoryRegistry,
+                                    ObjectMapper objectMapper) {
+        this.appRepo = appRepo;
+        this.modelRepo = modelRepo;
+        this.uiRepo = uiRepo;
+        this.govRepo = govRepo;
+        this.dataAccessor = dataAccessor;
+        this.memoryRegistry = memoryRegistry;
+        this.objectMapper = objectMapper;
+    }
+
+    public List<AppAggregate> listApps() {
+        return appRepo.findAll();
+    }
+
+    public AppAggregate saveApp(AppAggregate app) {
+        if (app.getName() == null || app.getName().isBlank()) {
+            throw DomainException.invalidParams("应用标识 (name) 不能为空");
+        }
+        String now = nowStr();
+        if (app.getId() == null || app.getId().isBlank()) app.setId(app.getName());
+        if (app.getCreateDate() == null) app.setCreateDate(now);
+        app.setUpdateDate(now);
+        if (app.getCreateUser() == null && MetaContext.current() != null) {
+            app.setCreateUser(MetaContext.current().getUserId());
+        }
+        appRepo.save(app);
+        return app;
+    }
+
+    /**
+     * 批量导入标准 App JSON 包（包含 App、Models、Views、Menus）。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> importAppPackage(Map<String, Object> packageJson, boolean autoPublish) {
+        if (packageJson == null || !packageJson.containsKey("app") || !packageJson.containsKey("models")) {
+            throw DomainException.invalidParams("导入包格式非法：必须包含 app 与 models 节点");
+        }
+        registerRollbackReloadGuard();
+
+        AppAggregate app = objectMapper.convertValue(packageJson.get("app"), AppAggregate.class);
+        saveApp(app);
+
+        List<Map<String, Object>> modelMaps = (List<Map<String, Object>>) packageJson.get("models");
+        List<ModelSnapshot> batchSnapshots = new ArrayList<>();
+        Set<String> availableNames = new LinkedHashSet<>(memoryRegistry.getAllActiveSnapshots().keySet());
+        modelRepo.findAllModels().forEach(m -> {
+            if (m.getLifecycleState() != ModelAggregate.LifecycleState.PURGED) availableNames.add(m.getName());
+        });
+        for (Map<String, Object> mm : modelMaps) {
+            ModelSnapshot snap = objectMapper.convertValue(mm, ModelSnapshot.class);
+            if (snap.getAppName() == null || snap.getAppName().isBlank()) {
+                snap.setAppName(app.getName());
+            }
+            availableNames.add(snap.getName());
+            batchSnapshots.add(snap);
+        }
+
+        // 1. 批量语义与脚本校验
+        for (ModelSnapshot snap : batchSnapshots) {
+            validationService.validateOrThrow(snap, availableNames);
+        }
+
+        // 2. 保存视图声明（若包内有声明）
+        if (packageJson.get("views") instanceof Map) {
+            Map<String, Object> viewsObj = (Map<String, Object>) packageJson.get("views");
+            for (Map.Entry<String, Object> entry : viewsObj.entrySet()) {
+                UiViewDef viewDef = objectMapper.convertValue(entry.getValue(), UiViewDef.class);
+                if (viewDef.getKey() == null || viewDef.getKey().isBlank()) {
+                    viewDef.setKey(entry.getKey());
+                }
+                if (viewDef.getId() == null) viewDef.setId(viewDef.getKey());
+                uiRepo.saveView(viewDef);
+            }
+        }
+
+        // 3. 分阶段导入：先持久化全部草稿并构建默认三件套视图，再统一影响检查与发布，避免同批模型互指失败
+        Map<String, ModelSnapshot> knownMap = new HashMap<>(collectRawActiveSnapshots());
+        batchSnapshots.forEach(s -> knownMap.put(s.getName(), s));
+
+        Map<String, ModelVersion> draftsByModel = new LinkedHashMap<>();
+        for (ModelSnapshot snap : batchSnapshots) {
+            ModelVersion draft = saveModelDraftInternal(snap, availableNames);
+            draftsByModel.put(snap.getName(), draft);
+            if (!snap.isAbstractModel() && !snap.isExtensionPackage()
+                    && uiRepo.findViewsByModel(snap.getName()).isEmpty()) {
+                ModelSnapshot effective = inheritanceService.resolveEffectiveSnapshot(snap.getName(), knownMap);
+                for (UiViewDef v : viewGenerator.generateDefaultTriadViews(effective != null ? effective : snap, knownMap)) {
+                    uiRepo.saveView(v);
+                }
+            }
+        }
+
+        List<Map<String, Object>> importedModels = new ArrayList<>();
+        for (ModelSnapshot snap : batchSnapshots) {
+            ModelVersion draft = draftsByModel.get(snap.getName());
+            if (autoPublish) {
+                ImpactReport report = checkImpact(snap.getName(), draft.getId());
+                if (!report.isPassed()) {
+                    throw DomainException.impactBlocked(
+                            "模型 [" + snap.getName() + "] 自动发布受阻", report.getBlockingReasons());
+                }
+                publishModel(snap.getName(), draft.getId(), report.getValidationHash());
+            }
+            importedModels.add(Map.of("modelName", snap.getName(), "versionId", draft.getId(), "versionNo", draft.getVersionNo()));
+        }
+
+        // 4. 保存菜单（若未提供菜单且自动发布，为每个模型创建默认菜单挂于根应用下）
+        if (packageJson.get("menus") instanceof Map) {
+            Map<String, Object> menusObj = (Map<String, Object>) packageJson.get("menus");
+            for (Map.Entry<String, Object> entry : menusObj.entrySet()) {
+                Map<String, Object> mMap = (Map<String, Object>) entry.getValue();
+                MenuNode node = new MenuNode();
+                node.setId(entry.getKey());
+                node.setName(String.valueOf(mMap.getOrDefault("name", entry.getKey())));
+                node.setDisplayName(String.valueOf(mMap.getOrDefault("display_name", mMap.getOrDefault("displayName", node.getName()))));
+                node.setAppName(app.getName());
+                node.setIcon(mMap.get("icon") != null ? mMap.get("icon").toString() : "Grid");
+                node.setModel(mMap.get("model") != null ? mMap.get("model").toString() : null);
+                node.setView(mMap.get("view") != null ? mMap.get("view").toString() : null);
+                node.setFilter(mMap.get("filter") != null ? mMap.get("filter").toString() : null);
+                node.setSequence(mMap.get("sequence") instanceof Number ? ((Number) mMap.get("sequence")).intValue() : 10);
+                node.setActive(mMap.get("active") == null || Boolean.TRUE.equals(mMap.get("active")));
+                Object pRef = mMap.get("parent_ids");
+                if (pRef instanceof Map && ((Map<?, ?>) pRef).containsKey("@ref")) {
+                    node.setParentId(String.valueOf(((Map<?, ?>) pRef).get("@ref")));
+                } else if (mMap.get("parentId") != null) {
+                    node.setParentId(mMap.get("parentId").toString());
+                }
+                uiRepo.saveMenu(node);
+            }
+        } else {
+            ensureDefaultMenusForApp(app, batchSnapshots);
+        }
+
+        memoryRegistry.reloadAll();
+        return Map.of(
+                "app", app,
+                "importedModels", importedModels,
+                "autoPublished", autoPublish
+        );
+    }
+
+    private void registerRollbackReloadGuard() {
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override
+                        public void afterCompletion(int status) {
+                            if (status != STATUS_COMMITTED) {
+                                memoryRegistry.reloadAll();
+                            }
+                        }
+                    });
+        }
+    }
+
+    public Map<String, Object> exportAppPackage(String appName) {
+        AppAggregate app = appRepo.findByName(appName)
+                .orElseThrow(() -> DomainException.invalidParams("应用不存在: " + appName));
+        List<ModelAggregate> models = modelRepo.findModelsByApp(appName);
+        List<ModelSnapshot> snaps = new ArrayList<>();
+        Map<String, Object> views = new LinkedHashMap<>();
+
+        for (ModelAggregate m : models) {
+            ModelVersion ver = null;
+            if (m.getActiveVersionId() != null) {
+                ver = modelRepo.findVersionById(m.getActiveVersionId()).orElse(null);
+            }
+            if (ver == null) {
+                List<ModelVersion> allV = modelRepo.findVersionsByModel(m.getName());
+                if (!allV.isEmpty()) ver = allV.get(0);
+            }
+            if (ver != null && ver.getSnapshot() != null) {
+                snaps.add(ver.getSnapshot());
+            }
+            for (UiViewDef v : uiRepo.findViewsByModel(m.getName())) {
+                views.put(v.getKey(), v);
+            }
+        }
+
+        Map<String, Object> menus = new LinkedHashMap<>();
+        for (MenuNode mn : uiRepo.findAllMenus()) {
+            if (appName.equals(mn.getAppName())) {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("name", mn.getName());
+                item.put("display_name", mn.getDisplayName());
+                item.put("icon", mn.getIcon());
+                item.put("model", mn.getModel());
+                item.put("view", mn.getView());
+                item.put("sequence", mn.getSequence());
+                item.put("active", mn.isActive());
+                if (mn.getParentId() != null) {
+                    item.put("parent_ids", Map.of("@ref", mn.getParentId()));
+                }
+                menus.put(mn.getName(), item);
+            }
+        }
+
+        Map<String, Object> pkg = new LinkedHashMap<>();
+        pkg.put("app", app);
+        pkg.put("models", snaps);
+        pkg.put("views", views);
+        pkg.put("menus", menus);
+        return pkg;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public ModelVersion saveModelDraft(ModelSnapshot snapshot) {
+        return saveModelDraftInternal(snapshot, Collections.emptySet());
+    }
+
+    private ModelVersion saveModelDraftInternal(ModelSnapshot snapshot, Set<String> extraAvailableModels) {
+        if (snapshot == null || snapshot.getName() == null || snapshot.getName().isBlank()) {
+            throw DomainException.invalidParams("模型定义必须指定合法 name");
+        }
+        if (snapshot.getAppName() == null || snapshot.getAppName().isBlank()) {
+            snapshot.setAppName("default_app");
+        }
+        ensureAppExists(snapshot.getAppName());
+
+        Set<String> availableNames = new LinkedHashSet<>(memoryRegistry.getAllActiveSnapshots().keySet());
+        modelRepo.findAllModels().forEach(m -> {
+            if (m.getLifecycleState() != ModelAggregate.LifecycleState.PURGED) availableNames.add(m.getName());
+        });
+        if (extraAvailableModels != null) {
+            availableNames.addAll(extraAvailableModels);
+        }
+        availableNames.add(snapshot.getName());
+        validationService.validateOrThrow(snapshot, availableNames);
+
+        String now = nowStr();
+        String uid = MetaContext.current() != null ? MetaContext.current().getUserId() : MetaContext.SUPERUSER;
+        ModelAggregate agg = modelRepo.findModelByName(snapshot.getName()).orElseGet(() -> {
+            ModelAggregate m = new ModelAggregate();
+            m.setId("mdl_" + snapshot.getName());
+            m.setName(snapshot.getName());
+            m.setCreateUser(uid);
+            m.setCreateDate(now);
+            return m;
+        });
+        agg.setDisplayName(snapshot.getDisplayName() != null ? snapshot.getDisplayName() : snapshot.getName());
+        agg.setAppName(snapshot.getAppName());
+        agg.setTableName(snapshot.resolvedTableName());
+        agg.setUpdateDate(now);
+        modelRepo.saveModel(agg);
+
+        String versionNo = (snapshot.getVersionNo() != null && !snapshot.getVersionNo().isBlank())
+                ? snapshot.getVersionNo() : "1.0.0";
+        Optional<ModelVersion> existingVerOpt = modelRepo.findVersion(snapshot.getName(), versionNo);
+        if (existingVerOpt.isPresent() && existingVerOpt.get().isImmutable()) {
+            throw DomainException.stateGuardFailed(
+                    "版本 [" + versionNo + "] 已发布且不可变，请递增新版本号（例如新版本草稿）再保存修改！");
+        }
+
+        ModelVersion ver = existingVerOpt.orElseGet(() -> {
+            ModelVersion nv = new ModelVersion();
+            nv.setId("ver_" + snapshot.getName() + "_" + UUID.randomUUID().toString().substring(0, 8));
+            nv.setModelName(snapshot.getName());
+            nv.setVersionNo(versionNo);
+            nv.setCreatedBy(uid);
+            nv.setCreatedAt(now);
+            return nv;
+        });
+        ver.setStatus(ModelVersion.Status.DRAFT);
+        ver.setSnapshot(snapshot);
+        ver.setValidationHash(null);
+        ver.setValidatedAt(null);
+        try {
+            ver.setSnapshotJson(objectMapper.writeValueAsString(snapshot));
+        } catch (Exception e) {
+            throw DomainException.invalidParams("模型快照 JSON 序列化失败");
+        }
+        modelRepo.saveVersion(ver);
+        return ver;
+    }
+
+    /**
+     * 对标 dev-center MetaView.buildDefaultViews：一键为模型生成标准三件套视图并挂载菜单。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> buildDefaultViews(String modelName) {
+        ModelAggregate agg = modelRepo.findModelByName(modelName)
+                .orElseThrow(() -> DomainException.invalidParams("模型不存在: " + modelName));
+        List<ModelVersion> versions = modelRepo.findVersionsByModel(modelName);
+        if (versions.isEmpty()) {
+            throw DomainException.stateGuardFailed("模型尚无任何版本定义");
+        }
+        ModelVersion target = agg.getActiveVersionId() != null
+                ? modelRepo.findVersionById(agg.getActiveVersionId()).orElse(versions.get(0))
+                : versions.get(0);
+
+        if (target.getSnapshot().isAbstractModel() || target.getSnapshot().isExtensionPackage()) {
+            throw DomainException.invalidParams("抽象父模型或增量扩展包不生成独立默认视图");
+        }
+        Map<String, ModelSnapshot> rawAll = collectRawActiveSnapshots();
+        rawAll.put(modelName, target.getSnapshot());
+        ModelSnapshot effective = inheritanceService.resolveEffectiveSnapshot(modelName, rawAll);
+
+        List<UiViewDef> views = viewGenerator.generateDefaultTriadViews(
+                effective != null ? effective : target.getSnapshot(), rawAll);
+        for (UiViewDef v : views) {
+            uiRepo.saveView(v);
+        }
+
+        // 自动补充业务菜单挂载到应用下
+        AppAggregate app = appRepo.findByName(agg.getAppName()).orElse(null);
+        if (app != null) {
+            ensureDefaultMenusForApp(app, Collections.singletonList(target.getSnapshot()));
+        }
+
+        return Map.of(
+                "modelName", modelName,
+                "generatedViews", views.stream().map(UiViewDef::getKey).toList()
+        );
+    }
+
+    /**
+     * 触发版本静态检验与引用影响分析 (DRAFT -> VALIDATED)。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public ImpactReport checkImpact(String modelName, String versionId) {
+        ModelAggregate agg = modelRepo.findModelByName(modelName)
+                .orElseThrow(() -> DomainException.invalidParams("模型不存在: " + modelName));
+        ModelVersion candidate = (versionId != null && !versionId.isBlank())
+                ? modelRepo.findVersionById(versionId).orElseThrow(() -> DomainException.invalidParams("版本不存在: " + versionId))
+                : modelRepo.findVersionsByModel(modelName).stream().findFirst()
+                    .orElseThrow(() -> DomainException.invalidParams("模型无候选版本"));
+
+        ModelVersion activeVer = agg.getActiveVersionId() != null
+                ? modelRepo.findVersionById(agg.getActiveVersionId()).orElse(null) : null;
+
+        Set<String> availableNames = new LinkedHashSet<>(memoryRegistry.getAllActiveSnapshots().keySet());
+        modelRepo.findAllModels().forEach(m -> {
+            if (m.getLifecycleState() != ModelAggregate.LifecycleState.PURGED) availableNames.add(m.getName());
+        });
+        availableNames.add(modelName);
+        List<String> syntaxErrors = validationService.validateSnapshot(candidate.getSnapshot(), availableNames);
+
+        List<UiViewDef> existingViews = uiRepo.findViewsByModel(modelName);
+        List<ModelSnapshot> otherModels = new ArrayList<>(memoryRegistry.getAllActiveSnapshots().values());
+        long existingCount = (activeVer != null && activeVer.getSnapshot() != null)
+                ? safeCountRecords(activeVer.getSnapshot()) : 0L;
+
+        String hash = sha256(candidate.getId() + "|" + candidate.getSnapshotJson());
+        ImpactReport report = refAnalyzer.analyzeImpact(activeVer, candidate, existingViews, otherModels, existingCount, hash);
+        if (!syntaxErrors.isEmpty()) {
+            report.getBlockingReasons().addAll(0, syntaxErrors);
+            report.setPassed(false);
+        }
+
+        // 记录影响与引用图快照
+        List<ReferenceRecord> nextRefs = refAnalyzer.extractReferences(candidate, existingViews, otherModels);
+        modelRepo.replaceReferences(candidate.getId(), nextRefs);
+
+        if (report.isPassed()) {
+            candidate.setStatus(ModelVersion.Status.VALIDATED);
+            candidate.setValidationHash(hash);
+            candidate.setValidatedAt(nowStr());
+        } else {
+            candidate.setStatus(ModelVersion.Status.DRAFT);
+        }
+        modelRepo.saveVersion(candidate);
+        return report;
+    }
+
+    /**
+     * 显式发布候选版本：同步 DDL -> 原子切换活动指针 -> 写发布记录 -> 热重载内存引擎。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> publishModel(String modelName, String versionId, String expectedHash) {
+        ModelAggregate agg = modelRepo.findModelByName(modelName)
+                .orElseThrow(() -> DomainException.invalidParams("模型不存在: " + modelName));
+        ModelVersion target = modelRepo.findVersionById(versionId)
+                .orElseThrow(() -> DomainException.invalidParams("目标版本不存在: " + versionId));
+
+        String previousActiveId = agg.getActiveVersionId();
+        agg.activateVersion(target, expectedHash);
+
+        Map<String, ModelSnapshot> rawAll = collectRawActiveSnapshots();
+        ModelSnapshot rawTarget = target.getSnapshot();
+        rawAll.put(modelName, rawTarget);
+
+        // 1. 同步物理表 DDL（跳过抽象父模型与扩展包本身；对具体模型或被扩展的宿主模型同步完整继承合并表结构）
+        if (rawTarget.isAbstractModel()) {
+            for (String candName : rawAll.keySet()) {
+                if (Objects.equals(candName, modelName)) continue;
+                ModelSnapshot effChild = inheritanceService.resolveEffectiveSnapshot(candName, rawAll);
+                if (effChild != null && !effChild.isAbstractModel() && !effChild.isExtensionPackage()
+                        && effChild.getParents().contains(modelName)) {
+                    dataAccessor.syncSchema(effChild);
+                }
+            }
+        } else if (rawTarget.isExtensionPackage()) {
+            String hostModel = rawTarget.getExtendModel();
+            ModelSnapshot effHost = inheritanceService.resolveEffectiveSnapshot(hostModel, rawAll);
+            if (effHost != null && !effHost.isAbstractModel()) {
+                dataAccessor.syncSchema(effHost);
+            }
+        } else {
+            ModelSnapshot effective = inheritanceService.resolveEffectiveSnapshot(modelName, rawAll);
+            dataAccessor.syncSchema(effective != null ? effective : rawTarget);
+        }
+
+        // 2. 退役原活动版本，持久化新指针
+        if (previousActiveId != null && !previousActiveId.equals(target.getId())) {
+            modelRepo.findVersionById(previousActiveId).ifPresent(prev -> {
+                prev.setStatus(ModelVersion.Status.RETIRED);
+                modelRepo.saveVersion(prev);
+            });
+        }
+        modelRepo.saveVersion(target);
+        agg.setUpdateDate(nowStr());
+        modelRepo.saveModel(agg);
+
+        // 3. 记录发布审计
+        PublishRecord pr = new PublishRecord();
+        pr.setId("pub_" + UUID.randomUUID().toString().substring(0, 8));
+        pr.setModelName(modelName);
+        pr.setFromVersionId(previousActiveId);
+        pr.setToVersionId(target.getId());
+        pr.setToVersionNo(target.getVersionNo());
+        pr.setActionType("PUBLISH");
+        pr.setOperatorId(currentUserId());
+        pr.setOperatedAt(nowStr());
+        govRepo.savePublishRecord(pr);
+
+        // 4. 自动确保默认三件套视图与菜单就绪（抽象模型及扩展包除外）
+        if (!rawTarget.isAbstractModel() && !rawTarget.isExtensionPackage()) {
+            if (uiRepo.findViewsByModel(modelName).isEmpty()) {
+                ModelSnapshot effective = inheritanceService.resolveEffectiveSnapshot(modelName, rawAll);
+                for (UiViewDef v : viewGenerator.generateDefaultTriadViews(effective != null ? effective : rawTarget, rawAll)) {
+                    uiRepo.saveView(v);
+                }
+            }
+            appRepo.findByName(agg.getAppName()).ifPresent(app ->
+                    ensureDefaultMenusForApp(app, Collections.singletonList(rawTarget)));
+        }
+
+        memoryRegistry.reloadAll();
+        return Map.of(
+                "modelName", modelName,
+                "activeVersionId", target.getId(),
+                "versionNo", target.getVersionNo(),
+                "publishId", pr.getId()
+        );
+    }
+
+    /**
+     * 安全兼容回滚至指定历史版本，保留全部业务数据。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> rollbackModel(String modelName, String targetVersionId) {
+        ModelAggregate agg = modelRepo.findModelByName(modelName)
+                .orElseThrow(() -> DomainException.invalidParams("模型不存在: " + modelName));
+        ModelVersion target = modelRepo.findVersionById(targetVersionId)
+                .orElseThrow(() -> DomainException.invalidParams("目标版本不存在: " + targetVersionId));
+        if (target.getStatus() != ModelVersion.Status.RETIRED) {
+            throw DomainException.stateGuardFailed("仅可回滚至历史退役版本 (RETIRED)");
+        }
+
+        String previousActiveId = agg.getActiveVersionId();
+        agg.activateVersion(target, null);
+        if (previousActiveId != null && !previousActiveId.equals(target.getId())) {
+            modelRepo.findVersionById(previousActiveId).ifPresent(prev -> {
+                prev.setStatus(ModelVersion.Status.RETIRED);
+                modelRepo.saveVersion(prev);
+            });
+        }
+        modelRepo.saveVersion(target);
+        agg.setUpdateDate(nowStr());
+        modelRepo.saveModel(agg);
+
+        PublishRecord pr = new PublishRecord();
+        pr.setId("pub_" + UUID.randomUUID().toString().substring(0, 8));
+        pr.setModelName(modelName);
+        pr.setFromVersionId(previousActiveId);
+        pr.setToVersionId(target.getId());
+        pr.setToVersionNo(target.getVersionNo());
+        pr.setActionType("ROLLBACK");
+        pr.setOperatorId(currentUserId());
+        pr.setOperatedAt(nowStr());
+        govRepo.savePublishRecord(pr);
+
+        memoryRegistry.reloadAll();
+        return Map.of("modelName", modelName, "rolledBackToVersion", target.getVersionNo(), "dataPreserved", true);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public ModelAggregate offlineModel(String modelName) {
+        ModelAggregate agg = modelRepo.findModelByName(modelName)
+                .orElseThrow(() -> DomainException.invalidParams("模型不存在: " + modelName));
+        agg.markOffline(nowStr());
+        agg.setUpdateDate(nowStr());
+        modelRepo.saveModel(agg);
+        memoryRegistry.reloadAll();
+        return agg;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public ModelAggregate onlineModel(String modelName) {
+        ModelAggregate agg = modelRepo.findModelByName(modelName)
+                .orElseThrow(() -> DomainException.invalidParams("模型不存在: " + modelName));
+        agg.markOnline();
+        agg.setUpdateDate(nowStr());
+        modelRepo.saveModel(agg);
+        memoryRegistry.reloadAll();
+        return agg;
+    }
+
+    public Map<String, Object> exportModelData(String modelName) {
+        ModelAggregate agg = modelRepo.findModelByName(modelName)
+                .orElseThrow(() -> DomainException.invalidParams("模型不存在: " + modelName));
+        ModelVersion active = agg.getActiveVersionId() != null
+                ? modelRepo.findVersionById(agg.getActiveVersionId()).orElse(null) : null;
+        if (active == null || active.getSnapshot() == null) {
+            throw DomainException.stateGuardFailed("模型无版本结构，无法导出数据");
+        }
+        ModelSnapshot effective = memoryRegistry.getActiveSnapshotOrNull(modelName);
+        List<RecordData> records = dataAccessor.exportAll(effective != null ? effective : active.getSnapshot());
+        String ticketId = "exp_" + UUID.randomUUID().toString().substring(0, 12);
+        String json;
+        try { json = objectMapper.writeValueAsString(records); } catch (Exception e) { json = "[]"; }
+        govRepo.saveExportTicket(ticketId, modelName, records.size(), json, currentUserId(), nowStr());
+        return Map.of("exportTicket", ticketId, "modelName", modelName, "recordCount", records.size(), "records", records);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public PurgeApply applyPurge(String modelName, String exportTicket) {
+        ModelAggregate agg = modelRepo.findModelByName(modelName)
+                .orElseThrow(() -> DomainException.invalidParams("模型不存在: " + modelName));
+        verifyPurgeGuards(agg, exportTicket);
+
+        agg.setLifecycleState(ModelAggregate.LifecycleState.PURGE_PENDING);
+        modelRepo.saveModel(agg);
+
+        PurgeApply apply = new PurgeApply();
+        apply.setId("prg_" + UUID.randomUUID().toString().substring(0, 8));
+        apply.setModelName(modelName);
+        apply.setExportTicket(exportTicket);
+        apply.setApplyBy(currentUserId());
+        apply.setApplyTime(nowStr());
+        apply.setStatus(PurgeApply.Status.PENDING);
+        govRepo.savePurgeApply(apply);
+        return apply;
+    }
+
+    /**
+     * 独立管理员终审确认清除：强制校验 confirmBy != applyBy 且二次复查四大守卫。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public PurgeAudit confirmPurge(String applyId) {
+        PurgeApply apply = govRepo.findPurgeApplyById(applyId)
+                .orElseThrow(() -> DomainException.invalidParams("清除申请单不存在: " + applyId));
+        ModelAggregate agg = modelRepo.findModelByName(apply.getModelName())
+                .orElseThrow(() -> DomainException.invalidParams("目标模型不存在: " + apply.getModelName()));
+
+        String adminId = currentUserId();
+        apply.confirmBy(adminId, nowStr()); // 校验 applyBy != confirmBy
+        verifyPurgeGuards(agg, apply.getExportTicket());
+
+        long count = agg.getActiveVersionId() != null
+                ? modelRepo.findVersionById(agg.getActiveVersionId())
+                    .map(v -> safeCountRecords(v.getSnapshot())).orElse(0L)
+                : 0L;
+
+        // 执行物理销毁与元模型清理
+        dataAccessor.dropTable(agg.getTableName());
+        uiRepo.deleteViewsByModel(agg.getName());
+        uiRepo.deleteMenusByModel(agg.getName());
+        modelRepo.deleteReferencesByModel(agg.getName());
+        modelRepo.deleteVersionsByModel(agg.getName());
+        modelRepo.deleteModelMeta(agg.getName());
+
+        apply.setStatus(PurgeApply.Status.EXECUTED);
+        govRepo.savePurgeApply(apply);
+
+        PurgeAudit audit = new PurgeAudit();
+        audit.setAuditId("aud_" + UUID.randomUUID().toString().substring(0, 10));
+        audit.setModelName(agg.getName());
+        audit.setTableName(agg.getTableName());
+        audit.setExportTicket(apply.getExportTicket());
+        audit.setApplyBy(apply.getApplyBy());
+        audit.setConfirmBy(adminId);
+        audit.setPurgedRecordCount(count);
+        audit.setPurgedAt(nowStr());
+        govRepo.savePurgeAudit(audit);
+
+        memoryRegistry.reloadAll();
+        return audit;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public PurgeApply rejectPurge(String applyId, String reason) {
+        PurgeApply apply = govRepo.findPurgeApplyById(applyId)
+                .orElseThrow(() -> DomainException.invalidParams("清除申请单不存在: " + applyId));
+        apply.rejectBy(currentUserId(), reason, nowStr());
+        govRepo.savePurgeApply(apply);
+
+        modelRepo.findModelByName(apply.getModelName()).ifPresent(agg -> {
+            agg.setLifecycleState(ModelAggregate.LifecycleState.OFFLINE);
+            modelRepo.saveModel(agg);
+        });
+        return apply;
+    }
+
+    public Map<String, Object> getModelDetail(String modelName) {
+        ModelAggregate agg = modelRepo.findModelByName(modelName)
+                .orElseThrow(() -> DomainException.invalidParams("模型不存在: " + modelName));
+        List<ModelVersion> versions = modelRepo.findVersionsByModel(modelName);
+        List<UiViewDef> views = uiRepo.findViewsByModel(modelName);
+        List<ReferenceRecord> refs = agg.getActiveVersionId() != null
+                ? modelRepo.findReferencesByVersion(agg.getActiveVersionId()) : Collections.emptyList();
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("model", agg);
+        res.put("versions", versions);
+        res.put("views", views);
+        res.put("references", refs);
+        res.put("publishRecords", govRepo.findPublishRecords(modelName));
+        return res;
+    }
+
+    public List<Map<String, Object>> listModelsSummary() {
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (ModelAggregate m : modelRepo.findAllModels()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", m.getId());
+            row.put("name", m.getName());
+            row.put("displayName", m.getDisplayName());
+            row.put("appName", m.getAppName());
+            row.put("tableName", m.getTableName());
+            row.put("kernelModel", m.isKernelModel());
+            row.put("activeVersionId", m.getActiveVersionId());
+            row.put("lifecycleState", m.getLifecycleState().name());
+            row.put("offlineTime", m.getOfflineTime());
+            ModelVersion active = m.getActiveVersionId() != null
+                    ? modelRepo.findVersionById(m.getActiveVersionId()).orElse(null) : null;
+            List<ModelVersion> versions = modelRepo.findVersionsByModel(m.getName());
+            ModelVersion latest = active != null ? active : (versions.isEmpty() ? null : versions.get(0));
+            row.put("versionNo", latest != null ? latest.getVersionNo() : "-");
+            row.put("versionCount", versions.size());
+            row.put("fieldCount", (latest != null && latest.getSnapshot() != null) ? latest.getSnapshot().getProperties().size() : 0);
+            row.put("serviceCount", (latest != null && latest.getSnapshot() != null) ? latest.getSnapshot().getServices().size() : 0);
+            row.put("abstractModel", latest != null && latest.getSnapshot() != null && latest.getSnapshot().isAbstractModel());
+            row.put("extendModel", (latest != null && latest.getSnapshot() != null) ? latest.getSnapshot().getExtendModel() : null);
+            row.put("parents", (latest != null && latest.getSnapshot() != null) ? latest.getSnapshot().getParents() : Collections.emptyList());
+            list.add(row);
+        }
+        return list;
+    }
+
+    public List<PublishRecord> listPublishRecords(String modelName) { return govRepo.findPublishRecords(modelName); }
+    public List<PurgeApply> listPurgeApplies() { return govRepo.findAllPurgeApplies(); }
+    public List<PurgeAudit> listPurgeAudits() { return govRepo.findAllPurgeAudits(); }
+
+    // ==================== Private Guards & Helpers ====================
+
+    private void verifyPurgeGuards(ModelAggregate agg, String exportTicket) {
+        if (agg.isKernelModel()) {
+            throw DomainException.stateGuardFailed("平台内核模型禁止永久清除");
+        }
+        if (agg.getLifecycleState() != ModelAggregate.LifecycleState.OFFLINE
+                && agg.getLifecycleState() != ModelAggregate.LifecycleState.PURGE_PENDING) {
+            throw DomainException.stateGuardFailed("守卫阻断：仅已下线 (OFFLINE) 模型可发起清除，当前状态: " + agg.getLifecycleState());
+        }
+        if (agg.getRetentionDays() > 0 && agg.getOfflineTime() != null) {
+            LocalDateTime offAt = LocalDateTime.parse(agg.getOfflineTime(), TS_FMT);
+            long days = Duration.between(offAt, LocalDateTime.now()).toDays();
+            if (days < agg.getRetentionDays()) {
+                throw DomainException.stateGuardFailed("守卫阻断：未满最低保留期 (" + agg.getRetentionDays() + " 天)，当前已下线 " + days + " 天");
+            }
+        }
+        String ticketModel = govRepo.findValidExportTicketModel(exportTicket).orElse(null);
+        if (!Objects.equals(agg.getName(), ticketModel)) {
+            throw DomainException.stateGuardFailed("守卫阻断：缺少针对模型 [" + agg.getName() + "] 的有效数据导出凭据");
+        }
+        // 零外部强引用检查
+        for (ModelSnapshot other : memoryRegistry.getAllActiveSnapshots().values()) {
+            if (other.getName().equals(agg.getName())) continue;
+            for (PropertyDef p : other.getProperties()) {
+                if (p.isManyToOne() && agg.getName().equals(p.getRelateModel())) {
+                    throw DomainException.stateGuardFailed("守卫阻断：模型仍被外部模型 [" + other.getName() + "." + p.getName() + "] 引用");
+                }
+            }
+        }
+        // 检查是否存在未关闭业务记录（若有 status 属性且存在非终态，提示或由活跃记录检查）
+        if (agg.getActiveVersionId() != null) {
+            ModelSnapshot snap = modelRepo.findVersionById(agg.getActiveVersionId()).map(ModelVersion::getSnapshot).orElse(null);
+            if (snap != null && snap.getProperty("status") != null) {
+                long activeRows = safeCountRecords(snap);
+                if (activeRows > 0) {
+                    throw DomainException.stateGuardFailed("守卫阻断：当前模型尚存 " + activeRows + " 条业务数据记录未清理，请先删除/办结后再清除");
+                }
+            }
+        }
+    }
+
+    private void ensureAppExists(String appName) {
+        if (appRepo.findByName(appName).isEmpty()) {
+            AppAggregate app = new AppAggregate();
+            app.setId(appName);
+            app.setName(appName);
+            app.setDisplayName(appName);
+            saveApp(app);
+        }
+    }
+
+    private void ensureDefaultMenusForApp(AppAggregate app, List<ModelSnapshot> models) {
+        List<ModelSnapshot> concreteModels = new ArrayList<>();
+        for (ModelSnapshot s : models) {
+            if (s != null && !s.isAbstractModel() && !s.isExtensionPackage()) {
+                concreteModels.add(s);
+            }
+        }
+        if (concreteModels.isEmpty()) return;
+
+        String rootMenuName = app.getName() + "_root_menu";
+        if (uiRepo.findMenuByName(rootMenuName).isEmpty()) {
+            MenuNode root = new MenuNode();
+            root.setId(rootMenuName);
+            root.setName(rootMenuName);
+            root.setDisplayName(app.getDisplayName());
+            root.setAppName(app.getName());
+            root.setIcon("FolderOpened");
+            root.setSequence(20);
+            root.setActive(true);
+            uiRepo.saveMenu(root);
+        }
+        int seq = 10;
+        for (ModelSnapshot snap : concreteModels) {
+            String mMenuName = snap.getName() + "_menu";
+            if (uiRepo.findMenuByName(mMenuName).isEmpty()) {
+                MenuNode mn = new MenuNode();
+                mn.setId(mMenuName);
+                mn.setName(mMenuName);
+                mn.setDisplayName(snap.getDisplayName());
+                mn.setAppName(app.getName());
+                mn.setParentId(rootMenuName);
+                mn.setIcon("Document");
+                mn.setModel(snap.getName());
+                mn.setView(snap.getName() + "_grid," + snap.getName() + "_search," + snap.getName() + "_form");
+                mn.setSequence(seq);
+                mn.setActive(true);
+                uiRepo.saveMenu(mn);
+                seq += 10;
+            }
+        }
+    }
+
+    private Map<String, ModelSnapshot> collectRawActiveSnapshots() {
+        Map<String, ModelSnapshot> map = new LinkedHashMap<>();
+        for (ModelAggregate m : modelRepo.findAllModels()) {
+            if (m.getLifecycleState() == ModelAggregate.LifecycleState.PURGED || m.getActiveVersionId() == null) continue;
+            modelRepo.findVersionById(m.getActiveVersionId()).ifPresent(v -> {
+                if (v.getSnapshot() != null) map.put(m.getName(), v.getSnapshot());
+            });
+        }
+        return map;
+    }
+
+    private long safeCountRecords(ModelSnapshot snap) {
+        try {
+            return dataAccessor.countAllActiveRecords(snap);
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
+
+    private String currentUserId() {
+        return MetaContext.current() != null ? MetaContext.current().getUserId() : MetaContext.SUPERUSER;
+    }
+
+    private static String nowStr() {
+        return TS_FMT.format(LocalDateTime.now());
+    }
+
+    private static String sha256(String input) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(input.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : digest) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (Exception e) {
+            return UUID.randomUUID().toString();
+        }
+    }
+}
