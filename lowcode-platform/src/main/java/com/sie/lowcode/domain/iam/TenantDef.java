@@ -13,6 +13,7 @@ public class TenantDef {
     private String status = "ACTIVE";
     private String parentTenantId;
     private List<String> authorizedApps = new ArrayList<>(); // 空表示全部已安装应用可见（兼容默认根租户）
+    private List<String> authorizedMenus = new ArrayList<>(); // 空或含 "*" 表示已授权应用下全部激活菜单可见
     private int maxUsers = 100;
     private String createDate;
 
@@ -33,6 +34,10 @@ public class TenantDef {
     public List<String> getAuthorizedApps() { return authorizedApps; }
     public void setAuthorizedApps(List<String> authorizedApps) {
         this.authorizedApps = authorizedApps != null ? authorizedApps : new ArrayList<>();
+    }
+    public List<String> getAuthorizedMenus() { return authorizedMenus; }
+    public void setAuthorizedMenus(List<String> authorizedMenus) {
+        this.authorizedMenus = authorizedMenus != null ? authorizedMenus : new ArrayList<>();
     }
     public int getMaxUsers() { return maxUsers; }
     public void setMaxUsers(int maxUsers) { this.maxUsers = maxUsers; }

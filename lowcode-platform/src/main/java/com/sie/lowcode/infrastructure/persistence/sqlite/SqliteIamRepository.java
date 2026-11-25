@@ -93,10 +93,13 @@ public class SqliteIamRepository implements IamRepository {
     @Override
     public void saveRole(RoleDef role) {
         String permsJson = writeJson(role.getAllowedServices());
+        String menusJson = writeJson(role.getAllowedMenus());
+        String tenantId = (role.getTenantId() == null || role.getTenantId().isBlank())
+                ? "rbac_tenant_root" : role.getTenantId();
         jdbcTemplate.update(
-                "INSERT INTO rbac_role (id, code, name, data_scope, allowed_services_json) VALUES (?, ?, ?, ?, ?) " +
-                        "ON CONFLICT(code) DO UPDATE SET name=excluded.name, data_scope=excluded.data_scope, allowed_services_json=excluded.allowed_services_json",
-                role.getId(), role.getCode(), role.getName(), role.getDataScope(), permsJson);
+                "INSERT INTO rbac_role (id, code, name, data_scope, allowed_services_json, tenant_id, allowed_menus_json) VALUES (?, ?, ?, ?, ?, ?, ?) " +
+                        "ON CONFLICT(code) DO UPDATE SET name=excluded.name, data_scope=excluded.data_scope, allowed_services_json=excluded.allowed_services_json, tenant_id=excluded.tenant_id, allowed_menus_json=excluded.allowed_menus_json",
+                role.getId(), role.getCode(), role.getName(), role.getDataScope(), permsJson, tenantId, menusJson);
     }
 
     @Override
@@ -127,14 +130,15 @@ public class SqliteIamRepository implements IamRepository {
     @Override
     public void saveTenant(TenantDef t) {
         String appsJson = writeJson(t.getAuthorizedApps());
+        String menusJson = writeJson(t.getAuthorizedMenus());
         String parentId = "rbac_tenant_root".equals(t.getId()) ? null
                 : ((t.getParentTenantId() == null || t.getParentTenantId().isBlank()) ? "rbac_tenant_root" : t.getParentTenantId());
         jdbcTemplate.update(
-                "INSERT INTO rbac_tenant (id, code, name, contact_name, contact_phone, status, parent_tenant_id, authorized_apps_json, max_users, create_date) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+                "INSERT INTO rbac_tenant (id, code, name, contact_name, contact_phone, status, parent_tenant_id, authorized_apps_json, authorized_menus_json, max_users, create_date) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
                         "ON CONFLICT(code) DO UPDATE SET name=excluded.name, contact_name=excluded.contact_name, " +
-                        "contact_phone=excluded.contact_phone, status=excluded.status, parent_tenant_id=excluded.parent_tenant_id, authorized_apps_json=excluded.authorized_apps_json, max_users=excluded.max_users",
-                t.getId(), t.getCode(), t.getName(), t.getContactName(), t.getContactPhone(), t.getStatus(), parentId, appsJson, t.getMaxUsers(), t.getCreateDate());
+                        "contact_phone=excluded.contact_phone, status=excluded.status, parent_tenant_id=excluded.parent_tenant_id, authorized_apps_json=excluded.authorized_apps_json, authorized_menus_json=excluded.authorized_menus_json, max_users=excluded.max_users",
+                t.getId(), t.getCode(), t.getName(), t.getContactName(), t.getContactPhone(), t.getStatus(), parentId, appsJson, menusJson, t.getMaxUsers(), t.getCreateDate());
     }
 
     @Override
@@ -211,6 +215,10 @@ public class SqliteIamRepository implements IamRepository {
             String aj = (String) r.get("authorized_apps_json");
             if (aj != null) t.setAuthorizedApps(objectMapper.readValue(aj, new TypeReference<>() {}));
         } catch (Exception ignored) {}
+        try {
+            String mj = (String) r.get("authorized_menus_json");
+            if (mj != null) t.setAuthorizedMenus(objectMapper.readValue(mj, new TypeReference<>() {}));
+        } catch (Exception ignored) {}
         return t;
     }
 
@@ -231,9 +239,15 @@ public class SqliteIamRepository implements IamRepository {
         role.setCode((String) r.get("code"));
         role.setName((String) r.get("name"));
         role.setDataScope((String) r.get("data_scope"));
+        String tid = (String) r.get("tenant_id");
+        role.setTenantId((tid == null || tid.isBlank()) ? "rbac_tenant_root" : tid);
         try {
             String pj = (String) r.get("allowed_services_json");
             if (pj != null) role.setAllowedServices(objectMapper.readValue(pj, new TypeReference<>() {}));
+        } catch (Exception ignored) {}
+        try {
+            String mj = (String) r.get("allowed_menus_json");
+            if (mj != null) role.setAllowedMenus(objectMapper.readValue(mj, new TypeReference<>() {}));
         } catch (Exception ignored) {}
         return role;
     }

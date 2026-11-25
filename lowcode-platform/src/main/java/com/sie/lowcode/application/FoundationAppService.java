@@ -137,33 +137,60 @@ public class FoundationAppService {
 
     // ==================== 角色权限目录 ====================
     public List<Map<String, Object>> buildPermissionCatalog() {
+        return buildPermissionCatalog(true, null);
+    }
+
+    public List<Map<String, Object>> buildPermissionCatalog(boolean isRootAdmin, Set<String> allowedApps) {
         List<Map<String, Object>> groups = new ArrayList<>();
 
-        groups.add(permissionGroup("kernel", "平台基础与认证权限", List.of(
-                perm("*", "全平台超级权限 (*)", "*"),
-                perm("ui_*:*", "UI 动态菜单与视图加载 (ui_*:*)", "ui_*:*"),
-                perm("meta_dict:*", "数据字典管理 (meta_dict:*)", "meta_dict:*"),
-                perm("meta_code_rule:*", "编码规则管理 (meta_code_rule:*)", "meta_code_rule:*"),
-                perm("meta_file:*", "附件上传下载 (meta_file:*)", "meta_file:*"),
-                perm("api_doc:*", "接口文档查看 (api_doc:*)", "api_doc:*")
-        )));
+        if (isRootAdmin) {
+            groups.add(permissionGroup("kernel", "平台基础与认证权限", List.of(
+                    perm("*", "全平台超级权限 (*)", "*"),
+                    perm("ui_*:*", "UI 动态菜单与视图加载 (ui_*:*)", "ui_*:*"),
+                    perm("meta_dict:*", "数据字典管理 (meta_dict:*)", "meta_dict:*"),
+                    perm("meta_code_rule:*", "编码规则管理 (meta_code_rule:*)", "meta_code_rule:*"),
+                    perm("meta_file:*", "附件上传下载 (meta_file:*)", "meta_file:*"),
+                    perm("api_doc:*", "接口文档查看 (api_doc:*)", "api_doc:*")
+            )));
 
-        groups.add(permissionGroup("builtin_wildcard", "业务模型通用操作通配符", List.of(
-                perm("*:search", "所有模型查询列表 (*:search)", "*:search"),
-                perm("*:find", "所有模型单条详情 (*:find)", "*:find"),
-                perm("*:count", "所有模型数量统计 (*:count)", "*:count"),
-                perm("*:exists", "所有模型存在检查 (*:exists)", "*:exists"),
-                perm("*:lookup", "所有模型外键下拉 (*:lookup)", "*:lookup"),
-                perm("*:addMissingDefaultValues", "新增默认值初始化 (*:addMissingDefaultValues)", "*:addMissingDefaultValues"),
-                perm("*:getSelectionOptions", "动态下拉选项加载 (*:getSelectionOptions)", "*:getSelectionOptions"),
-                perm("*:create", "所有模型新建记录 (*:create)", "*:create"),
-                perm("*:update", "所有模型更新记录 (*:update)", "*:update"),
-                perm("*:delete", "所有模型删除记录 (*:delete)", "*:delete")
-        )));
+            groups.add(permissionGroup("builtin_wildcard", "业务模型通用操作通配符", List.of(
+                    perm("*:search", "所有模型查询列表 (*:search)", "*:search"),
+                    perm("*:find", "所有模型单条详情 (*:find)", "*:find"),
+                    perm("*:count", "所有模型数量统计 (*:count)", "*:count"),
+                    perm("*:exists", "所有模型存在检查 (*:exists)", "*:exists"),
+                    perm("*:lookup", "所有模型外键下拉 (*:lookup)", "*:lookup"),
+                    perm("*:addMissingDefaultValues", "新增默认值初始化 (*:addMissingDefaultValues)", "*:addMissingDefaultValues"),
+                    perm("*:getSelectionOptions", "动态下拉选项加载 (*:getSelectionOptions)", "*:getSelectionOptions"),
+                    perm("*:create", "所有模型新建记录 (*:create)", "*:create"),
+                    perm("*:update", "所有模型更新记录 (*:update)", "*:update"),
+                    perm("*:delete", "所有模型删除记录 (*:delete)", "*:delete")
+            )));
+        } else {
+            groups.add(permissionGroup("tenant_common", "分站业务通用运行权限", List.of(
+                    perm("ui_*:*", "UI 页面与菜单加载 (ui_*:*)", "ui_*:*"),
+                    perm("*:lookup", "跨菜单外键下拉参照 (*:lookup)", "*:lookup"),
+                    perm("*:addMissingDefaultValues", "表单默认值初始化 (*:addMissingDefaultValues)", "*:addMissingDefaultValues"),
+                    perm("*:getSelectionOptions", "动态选项读取 (*:getSelectionOptions)", "*:getSelectionOptions"),
+                    perm("meta_dict:itemsByType", "数据字典选项读取 (meta_dict:itemsByType)", "meta_dict:itemsByType"),
+                    perm("meta_dict:listTypes", "数据字典分类读取 (meta_dict:listTypes)", "meta_dict:listTypes"),
+                    perm("meta_code_rule:generateCode", "自动流水编号生成 (meta_code_rule:generateCode)", "meta_code_rule:generateCode"),
+                    perm("meta_file:*", "附件上传查看 (meta_file:*)", "meta_file:*"),
+                    perm("rbac_org:listOrgs", "查看本企业组织部门 (rbac_org:listOrgs)", "rbac_org:listOrgs")
+            )));
+        }
 
         for (ModelAggregate agg : modelRepo.findAllModels()) {
             if (agg.isKernelModel() || agg.getLifecycleState() == ModelAggregate.LifecycleState.PURGED) {
                 continue;
+            }
+            if (!isRootAdmin) {
+                String appName = agg.getAppName();
+                if (appName == null || "platform_kernel".equals(appName)) {
+                    continue;
+                }
+                if (allowedApps != null && !allowedApps.contains(appName)) {
+                    continue;
+                }
             }
             ModelSnapshot snap = memoryRegistry.getActiveSnapshotOrNull(agg.getName());
             if (snap == null || snap.isAbstractModel() || snap.isExtensionPackage()) {
@@ -172,9 +199,11 @@ public class FoundationAppService {
             List<Map<String, Object>> items = new ArrayList<>();
             items.add(perm(agg.getName() + ":*", agg.getDisplayName() + " 全部服务", agg.getName() + ":*"));
             items.add(perm(agg.getName() + ":search", "查询列表 (search)", agg.getName() + ":search"));
+            items.add(perm(agg.getName() + ":find", "单条详情 (find)", agg.getName() + ":find"));
             items.add(perm(agg.getName() + ":create", "新增记录 (create)", agg.getName() + ":create"));
             items.add(perm(agg.getName() + ":update", "修改记录 (update)", agg.getName() + ":update"));
             items.add(perm(agg.getName() + ":delete", "删除记录 (delete)", agg.getName() + ":delete"));
+            items.add(perm(agg.getName() + ":lookup", "外键下拉 (lookup)", agg.getName() + ":lookup"));
             for (ServiceDef s : snap.getServices()) {
                 String authKey = (s.getAuth() != null && !s.getAuth().isBlank()) ? s.getAuth() : s.getName();
                 items.add(perm(agg.getName() + ":" + authKey,

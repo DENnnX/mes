@@ -229,6 +229,9 @@ public class SqliteSchemaInitializer {
         ensureColumn("rbac_user", "phone", "TEXT");
         ensureColumn("rbac_user", "email", "TEXT");
         ensureColumn("rbac_tenant", "parent_tenant_id", "TEXT DEFAULT 'rbac_tenant_root'");
+        ensureColumn("rbac_tenant", "authorized_menus_json", "TEXT");
+        ensureColumn("rbac_role", "tenant_id", "TEXT DEFAULT 'rbac_tenant_root'");
+        ensureColumn("rbac_role", "allowed_menus_json", "TEXT");
     }
 
     private void ensureColumn(String table, String column, String sqlType) {

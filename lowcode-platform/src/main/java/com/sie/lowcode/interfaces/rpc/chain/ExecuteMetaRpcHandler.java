@@ -11,6 +11,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 责任链第 4 环（终环）：真正派发执行元模型治理、UI 视图菜单、IAM 认证与动态模型 RecordSet 服务。
@@ -86,7 +87,10 @@ public class ExecuteMetaRpcHandler implements RpcHandler {
                 return iamAppService.deleteRole(str(args.get("roleCode")));
             }
             if ("permissionCatalog".equals(service)) {
-                return foundationAppService.buildPermissionCatalog();
+                MetaContext meta = ctx.getMetaContext();
+                boolean rootAdmin = meta == null || (MetaContext.DEFAULT_TENANT.equals(meta.getTenantId()) && meta.isSuperUser());
+                Set<String> allowedApps = rootAdmin ? null : iamAppService.resolveAllowedAppNames(meta.getTenantId());
+                return foundationAppService.buildPermissionCatalog(rootAdmin, allowedApps);
             }
         }
         if ("rbac_tenant".equals(model)) {
@@ -101,7 +105,16 @@ public class ExecuteMetaRpcHandler implements RpcHandler {
                 @SuppressWarnings("unchecked")
                 java.util.List<String> apps = args.get("authorizedApps") instanceof java.util.List
                         ? (java.util.List<String>) args.get("authorizedApps") : java.util.Collections.emptyList();
-                return iamAppService.authorizeApps(str(args.get("tenantId")), apps);
+                @SuppressWarnings("unchecked")
+                java.util.List<String> menus = args.get("authorizedMenus") instanceof java.util.List
+                        ? (java.util.List<String>) args.get("authorizedMenus") : null;
+                return iamAppService.authorizeApps(str(args.get("tenantId")), apps, menus);
+            }
+            if ("authorizeMenus".equals(service)) {
+                @SuppressWarnings("unchecked")
+                java.util.List<String> menus = args.get("authorizedMenus") instanceof java.util.List
+                        ? (java.util.List<String>) args.get("authorizedMenus") : java.util.Collections.emptyList();
+                return iamAppService.authorizeMenus(str(args.get("tenantId")), menus);
             }
         }
         if ("rbac_org".equals(model)) {
@@ -167,8 +180,13 @@ public class ExecuteMetaRpcHandler implements RpcHandler {
         }
 
         // 2. UI 动态菜单与视图契约入口（无需依赖物理表）
-        if ("ui_menu".equals(model) && "loadMenu".equals(service)) {
-            return uiSchemaAppService.loadMenu();
+        if ("ui_menu".equals(model)) {
+            if ("loadMenu".equals(service)) {
+                return uiSchemaAppService.loadMenu();
+            }
+            if ("listAssignableMenus".equals(service)) {
+                return uiSchemaAppService.listAssignableMenus();
+            }
         }
         if ("ui_view".equals(model) && "loadView".equals(service)) {
             return uiSchemaAppService.loadView(str(args.get("model")), str(args.get("type")));

@@ -859,10 +859,15 @@ public class LowCodePlatformIntegrationTests {
         List<Map<String, Object>> hqUsers = requireResult(rpcCall(hqToken, "rbac_user", "listUsers", null));
         assertThat(hqUsers).extracting(u -> u.get("username")).containsOnly("hq_mgr");
 
-        // 2) hq_mgr 禁止调用根平台开发、建表、字典、角色及清理等管理接口 (-32001)
+        // 2) hq_mgr 禁止调用根平台开发、建表、字典、修改内置角色、授予通配符权限及清理等管理接口 (-32001)
         requireError(rpcCall(hqToken, "meta_app", "save", Map.of("app", Map.of("name", "bad", "displayName", "bad"))), -32001);
         requireError(rpcCall(hqToken, "meta_dict", "saveType", Map.of("values", Map.of("typeCode", "BAD", "name", "BAD"))), -32001);
-        requireError(rpcCall(hqToken, "rbac_role", "saveRole", Map.of("values", Map.of("code", "ROLE_BAD", "name", "bad"))), -32001);
+        requireError(rpcCall(hqToken, "rbac_role", "saveRole", Map.of("values", Map.of("code", "ROLE_APP_USER", "name", "hack"))), -32001);
+        requireError(rpcCall(hqToken, "rbac_role", "saveRole", Map.of("values", Map.of(
+                "code", "ROLE_EVIL", "name", "hack", "allowedServices", List.of("*")))), -32001);
+        // hq_mgr 获取权限目录时不应看到平台核心组 (kernel / builtin_wildcard) 或未授权应用模型
+        List<Map<String, Object>> hqCatalog = requireResult(rpcCall(hqToken, "rbac_role", "permissionCatalog", null));
+        assertThat(hqCatalog).extracting(g -> g.get("groupKey")).doesNotContain("kernel", "builtin_wildcard");
 
         // 3) hq_mgr 禁止操作根系统或其他企业的账号/租户，禁止赋予 ROLE_ADMIN (-32001)
         requireError(rpcCall(hqToken, "rbac_user", "resetPassword", Map.of("userId", "usr_admin", "newPassword", "hack")), -32001);
@@ -876,9 +881,41 @@ public class LowCodePlatformIntegrationTests {
         requireError(rpcCall(hqToken, "rbac_tenant", "authorizeApps",
                 Map.of("tenantId", "hq_corp", "authorizedApps", List.of("foundation_qa_app"))), -32001);
 
-        // 4) hq_mgr 正常给下属 sub_branch 授权 foundation_qa_app 并创建下级业务账号 sub_u1
-        requireResult(rpcCall(hqToken, "rbac_tenant", "authorizeApps",
-                Map.of("tenantId", "sub_branch", "authorizedApps", List.of("foundation_qa_app"))));
+        // 4) hq_mgr 正常给下属 sub_branch 授权 foundation_qa_app 并仅勾选 qa_ticket 对应菜单，隐藏 qa_notice 菜单，创建下级业务账号 sub_u1
+        Map<String, Object> noticeDraft = requireResult(rpcCall(adminToken, "meta_model", "saveDraft", Map.of("snapshot", Map.of(
+                "name", "qa_notice",
+                "displayName", "QA公告模型",
+                "appName", "foundation_qa_app",
+                "versionNo", "1.0.0",
+                "properties", List.of(
+                        Map.of("name", "title", "displayName", "公告标题", "dataType", "String", "required", true, "displayForModel", true)
+                )
+        ))));
+        Map<String, Object> noticeImpact = requireResult(rpcCall(adminToken, "meta_model", "checkImpact",
+                Map.of("modelName", "qa_notice", "versionId", noticeDraft.get("id"))));
+        requireResult(rpcCall(adminToken, "meta_model", "publish", Map.of(
+                "modelName", "qa_notice", "versionId", noticeDraft.get("id"), "validationHash", noticeImpact.get("validationHash"))));
+        requireResult(rpcCall(adminToken, "meta_model", "buildDefaultViews", Map.of("modelName", "qa_notice")));
+        requireResult(rpcCall(adminToken, "meta_menu", "saveMenu", Map.of("menu", Map.of(
+                "name", "qa_notice_menu", "displayName", "QA公告菜单",
+                "appName", "foundation_qa_app", "model", "qa_notice", "sequence", 20, "active", true))));
+
+        // 从 hq_mgr 视角获取可分配菜单列表，找出 qa_ticket 对应的菜单名
+        List<Map<String, Object>> hqAssignable = requireResult(rpcCall(hqToken, "ui_menu", "listAssignableMenus", null));
+        List<Map<String, Object>> fqaMenus = hqAssignable.stream()
+                .filter(g -> "foundation_qa_app".equals(g.get("appName")))
+                .flatMap(g -> ((List<Map<String, Object>>) g.get("menus")).stream())
+                .toList();
+        String ticketMenuName = fqaMenus.stream()
+                .filter(m -> "qa_ticket".equals(m.get("model")))
+                .map(m -> String.valueOf(m.get("name")))
+                .findFirst().orElseThrow();
+        assertThat(fqaMenus).extracting(m -> m.get("name")).contains(ticketMenuName, "qa_notice_menu");
+
+        requireResult(rpcCall(hqToken, "rbac_tenant", "authorizeApps", Map.of(
+                "tenantId", "sub_branch",
+                "authorizedApps", List.of("foundation_qa_app"),
+                "authorizedMenus", List.of(ticketMenuName))));
         requireResult(rpcCall(hqToken, "rbac_user", "saveUser", Map.of("values", Map.of(
                 "username", "sub_u1", "displayName", "分站业务员", "tenantId", "sub_branch",
                 "password", "123456", "roleCodes", List.of("ROLE_APP_USER")
@@ -887,10 +924,54 @@ public class LowCodePlatformIntegrationTests {
                 Map.of("username", "sub_u1", "password", "123456")));
         String subToken = (String) subLogin.get("token");
 
-        // 5) 业务数据层级边界：sub_u1 新建一条工单，hq_mgr 可看下属且不可见 root(user) 与 tenant_b 数据；sub_u1 只见自己的
+        // sub_u1 仅能看到勾选的 ticketMenuName，看不到未勾选的 qa_notice_menu 且直接 loadView 被拒，但跨菜单外键 lookup 仍可用
+        List<String> subMenus = flattenMenuNames(requireResult(rpcCall(subToken, "ui_menu", "loadMenu", null)));
+        assertThat(subMenus).contains(ticketMenuName).doesNotContain("qa_notice_menu");
+        requireResult(rpcCall(subToken, "ui_view", "loadView", Map.of("model", "qa_ticket")));
+        requireError(rpcCall(subToken, "ui_view", "loadView", Map.of("model", "qa_notice")), -32001);
+        requireResult(rpcCall(subToken, "qa_notice", "lookup", Map.of("keyword", "")));
+
+        // 5) hq_mgr 为下属分站创建自定义角色 ROLE_SUB_NONE 限制菜单为空 (__NONE__)，验证角色级菜单进一步收敛
+        requireResult(rpcCall(hqToken, "rbac_role", "saveRole", Map.of("values", Map.of(
+                "code", "ROLE_SUB_NONE",
+                "name", "无业务菜单测试角色",
+                "tenantId", "sub_branch",
+                "dataScope", "ALL",
+                "allowedServices", List.of("ui_*:*", "qa_ticket:search", "qa_ticket:find", "*:lookup"),
+                "allowedMenus", List.of("__NONE__")))));
+        requireResult(rpcCall(hqToken, "rbac_user", "saveUser", Map.of("values", Map.of(
+                "username", "sub_limited", "displayName", "受限角色员工", "tenantId", "sub_branch",
+                "password", "123456", "roleCodes", List.of("ROLE_SUB_NONE")))));
+        Map<String, Object> subLimitedLogin = requireResult(rpcCall(null, "rbac_user", "login",
+                Map.of("username", "sub_limited", "password", "123456")));
+        String subLimitedToken = (String) subLimitedLogin.get("token");
+        List<String> limitedMenus = flattenMenuNames(requireResult(rpcCall(subLimitedToken, "ui_menu", "loadMenu", null)));
+        assertThat(limitedMenus).doesNotContain(ticketMenuName, "qa_notice_menu");
+        requireError(rpcCall(subLimitedToken, "ui_view", "loadView", Map.of("model", "qa_ticket")), -32001);
+
+        // admin 兜底重新放开 sub_branch 菜单为 ["*"] 后，sub_u1 即可恢复可见 qa_notice_menu
+        requireResult(rpcCall(adminToken, "rbac_tenant", "authorizeMenus", Map.of(
+                "tenantId", "sub_branch", "authorizedMenus", List.of("*"))));
+        List<String> restoredMenus = flattenMenuNames(requireResult(rpcCall(subToken, "ui_menu", "loadMenu", null)));
+        assertThat(restoredMenus).contains(ticketMenuName, "qa_notice_menu");
+
+        // 6) 业务数据层级边界：sub_u1 新建一条工单，hq_mgr 可看下属且不可见 root(user) 与 tenant_b 数据；sub_u1 只见自己的
         requireResult(rpcCall(subToken, "qa_ticket", "create", Map.of("values", Map.of("title", "分站专属工单1"))));
         Map<String, Object> hqVisible = requireResult(rpcCall(hqToken, "qa_ticket", "search", Map.of("filter", Collections.emptyList())));
         assertThat((List<Map<String, Object>>) hqVisible.get("records"))
                 .extracting(r -> r.get("title")).containsExactly("分站专属工单1");
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> flattenMenuNames(List<Map<String, Object>> tree) {
+        List<String> names = new ArrayList<>();
+        if (tree == null) return names;
+        for (Map<String, Object> node : tree) {
+            if (node.get("name") != null) names.add(String.valueOf(node.get("name")));
+            if (node.get("children") instanceof List<?> children) {
+                names.addAll(flattenMenuNames((List<Map<String, Object>>) children));
+            }
+        }
+        return names;
     }
 }

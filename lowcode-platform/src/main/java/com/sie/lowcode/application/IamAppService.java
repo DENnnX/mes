@@ -14,6 +14,8 @@ import java.util.*;
 @Service
 public class IamAppService {
     private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final Set<String> BUILTIN_ROLE_CODES = Set.of(
+            "ROLE_ADMIN", "ROLE_DEVELOPER", "ROLE_PUBLISHER", "ROLE_APP_USER", "ROLE_TENANT_ADMIN");
     private final IamRepository iamRepository;
     private final AppRepository appRepository;
 
@@ -161,6 +163,42 @@ public class IamAppService {
         }
         Set<String> allowed = resolveAllowedAppNames(tenantId);
         return allowed == null || allowed.contains(appName);
+    }
+
+    /**
+     * 解析租户级被授权访问的菜单标识集合（沿上级分站向上继承收紧）：
+     * - 返回 null 表示未显式限制菜单（按已授权应用显示全部激活菜单）；
+     * - 若自身或任一上级租户存在非空且不含 "*" 的 authorizedMenus 列表，则逐级取交集返回。
+     */
+    public Set<String> resolveAllowedMenuNames(String tenantId) {
+        String tid = (tenantId == null || tenantId.isBlank()) ? MetaContext.DEFAULT_TENANT : tenantId;
+        Set<String> effective = null;
+        String cursor = tid;
+        Set<String> visited = new HashSet<>();
+        while (cursor != null && !cursor.isBlank() && visited.add(cursor)) {
+            Optional<TenantDef> tOpt = findTenantById(cursor);
+            if (tOpt.isEmpty()) {
+                return MetaContext.DEFAULT_TENANT.equals(cursor) ? effective : Collections.emptySet();
+            }
+            TenantDef t = tOpt.get();
+            List<String> menus = t.getAuthorizedMenus();
+            if (menus != null && !menus.isEmpty() && !menus.contains("*")) {
+                Set<String> levelAllowed = new LinkedHashSet<>();
+                for (String m : menus) {
+                    if (m != null && !m.isBlank() && !"__NONE__".equals(m)) {
+                        levelAllowed.add(m.trim());
+                    }
+                }
+                if (effective == null) {
+                    effective = levelAllowed;
+                } else {
+                    effective.retainAll(levelAllowed);
+                }
+            }
+            if (MetaContext.DEFAULT_TENANT.equals(cursor)) break;
+            cursor = t.getParentTenantId();
+        }
+        return effective;
     }
 
     private List<Map<String, Object>> buildAuthorizedAppList(Set<String> allowedAppNames) {
@@ -390,12 +428,19 @@ public class IamAppService {
         List<RoleDef> all = iamRepository.findAllRoles();
         UserAccount actor = currentActor();
         if (isRootSystemAdmin(actor)) return all;
+        Set<String> managed = resolveManagedTenantIds(actor);
         List<RoleDef> filtered = new ArrayList<>();
         for (RoleDef r : all) {
             if ("ROLE_ADMIN".equals(r.getCode()) || "ROLE_DEVELOPER".equals(r.getCode()) || "ROLE_PUBLISHER".equals(r.getCode())) {
                 continue;
             }
-            filtered.add(r);
+            if ("ROLE_APP_USER".equals(r.getCode()) || "ROLE_TENANT_ADMIN".equals(r.getCode())) {
+                filtered.add(r);
+                continue;
+            }
+            if (managed != null && !managed.isEmpty() && managed.contains(r.getTenantId())) {
+                filtered.add(r);
+            }
         }
         return filtered;
     }
@@ -404,16 +449,86 @@ public class IamAppService {
         if (role.getCode() == null || role.getCode().isBlank()) {
             throw DomainException.invalidParams("角色编码不能为空");
         }
+        role.setCode(role.getCode().trim());
+        if (role.getName() == null || role.getName().isBlank()) {
+            role.setName(role.getCode());
+        } else {
+            role.setName(role.getName().trim());
+        }
+        if (role.getDataScope() == null || role.getDataScope().isBlank()) {
+            role.setDataScope("ALL");
+        }
+
+        UserAccount actor = currentActor();
+        boolean rootAdmin = isRootSystemAdmin(actor);
+        RoleDef existingByCode = iamRepository.findAllRoles().stream()
+                .filter(r -> Objects.equals(role.getCode(), r.getCode()))
+                .findFirst().orElse(null);
+
+        if (!rootAdmin) {
+            Set<String> managed = resolveManagedTenantIds(actor);
+            if (managed == null || managed.isEmpty()) {
+                throw DomainException.permissionDenied("权限拒绝：仅管理员或租户主管可配置角色");
+            }
+            if (BUILTIN_ROLE_CODES.contains(role.getCode())) {
+                throw DomainException.permissionDenied("越权拒绝：平台内置角色 [" + role.getCode() + "] 禁止修改");
+            }
+            if (existingByCode != null && !managed.contains(existingByCode.getTenantId())) {
+                throw DomainException.permissionDenied("越权拒绝：无权修改根系统或其他企业的自定义角色 [" + role.getCode() + "]");
+            }
+            if (role.getId() != null && !role.getId().isBlank()) {
+                iamRepository.findAllRoles().stream()
+                        .filter(r -> Objects.equals(role.getId(), r.getId()))
+                        .findFirst()
+                        .ifPresent(exById -> {
+                            if (BUILTIN_ROLE_CODES.contains(exById.getCode()) || !managed.contains(exById.getTenantId())) {
+                                throw DomainException.permissionDenied("越权拒绝：无权篡改系统或他人角色");
+                            }
+                        });
+            }
+            if (role.getTenantId() == null || role.getTenantId().isBlank()) {
+                role.setTenantId(actor.getTenantId());
+            }
+            if (!managed.contains(role.getTenantId())) {
+                throw DomainException.permissionDenied("越权拒绝：仅可将角色归属在本企业或下属分站范围内");
+            }
+            validateDelegatedRoleServices(role.getAllowedServices());
+            List<String> cleanedMenus = normalizeMenuList(role.getAllowedMenus());
+            if (!cleanedMenus.isEmpty()) {
+                validateDelegatedMenus(actor.getTenantId(), cleanedMenus);
+            } else if (resolveAllowedMenuNames(actor.getTenantId()) != null) {
+                throw DomainException.permissionDenied("越权拒绝：上级总部本身受指定菜单范围限制，角色不可留空代表全部菜单");
+            }
+            role.setAllowedMenus(cleanedMenus);
+        } else {
+            if (role.getTenantId() == null || role.getTenantId().isBlank()) {
+                role.setTenantId(MetaContext.DEFAULT_TENANT);
+            }
+            role.setAllowedMenus(normalizeMenuList(role.getAllowedMenus()));
+        }
+
         if (role.getId() == null || role.getId().isBlank()) {
-            role.setId("role_" + UUID.randomUUID().toString().substring(0, 8));
+            role.setId(existingByCode != null ? existingByCode.getId()
+                    : "role_" + UUID.randomUUID().toString().substring(0, 8));
         }
         iamRepository.saveRole(role);
         return role;
     }
 
     public Map<String, Object> deleteRole(String roleCode) {
-        if ("ROLE_ADMIN".equals(roleCode) || "ROLE_APP_USER".equals(roleCode)) {
+        if (BUILTIN_ROLE_CODES.contains(roleCode)) {
             throw DomainException.stateGuardFailed("平台基础内置角色 [" + roleCode + "] 禁止删除");
+        }
+        RoleDef existing = iamRepository.findAllRoles().stream()
+                .filter(r -> Objects.equals(roleCode, r.getCode()))
+                .findFirst()
+                .orElseThrow(() -> DomainException.invalidParams("角色不存在: " + roleCode));
+        UserAccount actor = currentActor();
+        if (!isRootSystemAdmin(actor)) {
+            Set<String> managed = resolveManagedTenantIds(actor);
+            if (managed == null || !managed.contains(existing.getTenantId())) {
+                throw DomainException.permissionDenied("越权拒绝：无权删除根系统或其他企业的自定义角色");
+            }
         }
         iamRepository.deleteRole(roleCode);
         return Map.of("deleted", true, "roleCode", roleCode);
@@ -461,12 +576,18 @@ public class IamAppService {
                 if (!managed.contains(ex.getId())) {
                     throw DomainException.permissionDenied("越权拒绝：无权修改非本企业及其下属分站之外的租户");
                 }
-                // 保持既有上级层级关系，禁止自我修改已授权应用范围
+                // 保持既有上级层级关系，禁止自我修改已授权应用与菜单范围
                 t.setParentTenantId(ex.getParentTenantId());
                 if (Objects.equals(ex.getId(), actor.getTenantId())) {
                     t.setAuthorizedApps(ex.getAuthorizedApps());
+                    t.setAuthorizedMenus(ex.getAuthorizedMenus());
                 } else {
                     validateDelegatedApps(actor.getTenantId(), t.getAuthorizedApps());
+                    List<String> cleanedMenus = normalizeMenuList(t.getAuthorizedMenus());
+                    if (!cleanedMenus.isEmpty()) {
+                        validateDelegatedMenus(actor.getTenantId(), cleanedMenus);
+                    }
+                    t.setAuthorizedMenus(cleanedMenus);
                 }
             } else {
                 // 下级新建分站，强制挂在当前总部租户名下
@@ -474,7 +595,14 @@ public class IamAppService {
                     t.setParentTenantId(actor.getTenantId());
                 }
                 validateDelegatedApps(actor.getTenantId(), t.getAuthorizedApps());
+                List<String> cleanedMenus = normalizeMenuList(t.getAuthorizedMenus());
+                if (!cleanedMenus.isEmpty()) {
+                    validateDelegatedMenus(actor.getTenantId(), cleanedMenus);
+                }
+                t.setAuthorizedMenus(cleanedMenus);
             }
+        } else {
+            t.setAuthorizedMenus(normalizeMenuList(t.getAuthorizedMenus()));
         }
 
         iamRepository.saveTenant(t);
@@ -504,6 +632,10 @@ public class IamAppService {
     }
 
     public TenantDef authorizeApps(String tenantId, List<String> authorizedApps) {
+        return authorizeApps(tenantId, authorizedApps, null);
+    }
+
+    public TenantDef authorizeApps(String tenantId, List<String> authorizedApps, List<String> authorizedMenus) {
         TenantDef tenant = findTenantById(tenantId)
                 .orElseThrow(() -> DomainException.invalidParams("租户不存在: " + tenantId));
         UserAccount actor = currentActor();
@@ -513,10 +645,79 @@ public class IamAppService {
                 throw DomainException.permissionDenied("越权拒绝：仅可为下属分站/租户授权，无权修改自身或其他企业租户授权");
             }
             validateDelegatedApps(actor.getTenantId(), authorizedApps);
+            if (authorizedMenus != null) {
+                validateDelegatedMenus(actor.getTenantId(), authorizedMenus);
+            }
         }
         tenant.setAuthorizedApps(authorizedApps != null ? authorizedApps : new ArrayList<>());
+        if (authorizedMenus != null) {
+            tenant.setAuthorizedMenus(normalizeMenuList(authorizedMenus));
+        }
         iamRepository.saveTenant(tenant);
         return tenant;
+    }
+
+    public TenantDef authorizeMenus(String tenantId, List<String> authorizedMenus) {
+        TenantDef tenant = findTenantById(tenantId)
+                .orElseThrow(() -> DomainException.invalidParams("租户不存在: " + tenantId));
+        UserAccount actor = currentActor();
+        if (!isRootSystemAdmin(actor)) {
+            Set<String> managed = resolveManagedTenantIds(actor);
+            if (!managed.contains(tenant.getId()) || Objects.equals(tenant.getId(), actor.getTenantId())) {
+                throw DomainException.permissionDenied("越权拒绝：仅可为下属分站/租户配置菜单，无权修改自身或其他企业租户权限");
+            }
+            validateDelegatedMenus(actor.getTenantId(), authorizedMenus);
+        }
+        tenant.setAuthorizedMenus(normalizeMenuList(authorizedMenus));
+        iamRepository.saveTenant(tenant);
+        return tenant;
+    }
+
+    private List<String> normalizeMenuList(List<String> raw) {
+        if (raw == null || raw.isEmpty()) return new ArrayList<>();
+        Set<String> cleaned = new LinkedHashSet<>();
+        for (String s : raw) {
+            if (s != null && !s.isBlank()) cleaned.add(s.trim());
+        }
+        if (cleaned.contains("*")) return new ArrayList<>(List.of("*"));
+        if (cleaned.contains("__NONE__") && cleaned.size() > 1) cleaned.remove("__NONE__");
+        return new ArrayList<>(cleaned);
+    }
+
+    private void validateDelegatedMenus(String parentTenantId, List<String> delegatedMenus) {
+        Set<String> parentAllowed = resolveAllowedMenuNames(parentTenantId);
+        if (parentAllowed == null) {
+            return;
+        }
+        if (delegatedMenus == null || delegatedMenus.isEmpty() || delegatedMenus.contains("*")) {
+            throw DomainException.permissionDenied("越权拒绝：上级总部本身受指定菜单范围限制，不可向下级授予全部菜单 (*)");
+        }
+        for (String menu : delegatedMenus) {
+            if (menu == null || menu.isBlank() || "__NONE__".equals(menu)) continue;
+            if (!parentAllowed.contains(menu.trim())) {
+                throw DomainException.permissionDenied("越权拒绝：菜单 [" + menu + "] 不在本总部的已授权菜单范围内");
+            }
+        }
+    }
+
+    private void validateDelegatedRoleServices(Set<String> services) {
+        if (services == null || services.isEmpty()) return;
+        for (String raw : services) {
+            if (raw == null || raw.isBlank()) continue;
+            String s = raw.trim();
+            if ("*".equals(s) || "*:*".equals(s)
+                    || "*:create".equals(s) || "*:update".equals(s) || "*:delete".equals(s)
+                    || "*:search".equals(s) || "*:find".equals(s) || "*:count".equals(s) || "*:exists".equals(s)
+                    || s.startsWith("meta_model") || s.startsWith("meta_app")
+                    || s.startsWith("meta_view") || s.startsWith("meta_menu")
+                    || s.startsWith("meta_dict:save") || s.startsWith("meta_dict:delete")
+                    || s.startsWith("meta_code_rule:save") || s.startsWith("meta_code_rule:delete")
+                    || s.startsWith("rbac_tenant") || s.startsWith("rbac_role")
+                    || s.startsWith("rbac_user:save") || s.startsWith("rbac_user:delete") || s.startsWith("rbac_user:reset")
+                    || s.contains("Purge")) {
+                throw DomainException.permissionDenied("越权拒绝：租户角色无权配置平台系统或全模型通配权限 [" + s + "]");
+            }
+        }
     }
 
     // --- 组织架构树管理 ---

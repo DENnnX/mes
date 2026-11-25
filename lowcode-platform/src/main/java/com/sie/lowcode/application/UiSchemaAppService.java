@@ -48,6 +48,7 @@ public class UiSchemaAppService {
             modelMap.put(m.getName(), m);
         }
         Set<String> allowedApps = resolveTenantAllowedApps();
+        Set<String> allowedMenus = resolveEffectiveAllowedMenus();
 
         List<MenuNode> activeMenus = new ArrayList<>();
         for (MenuNode menu : allMenus) {
@@ -55,6 +56,11 @@ public class UiSchemaAppService {
             if (allowedApps != null && menu.getAppName() != null
                     && !"platform_kernel".equals(menu.getAppName())
                     && !allowedApps.contains(menu.getAppName())) {
+                continue;
+            }
+            if (allowedMenus != null && !"platform_kernel".equals(menu.getAppName())
+                    && menu.getModel() != null && !menu.getModel().isBlank()
+                    && !matchesAllowedMenu(allowedMenus, menu)) {
                 continue;
             }
             if (menu.getModel() != null && !menu.getModel().isBlank()) {
@@ -104,10 +110,72 @@ public class UiSchemaAppService {
                 roots.add(cur);
             }
         }
-        if (allowedApps != null) {
-            roots.removeIf(r -> r.get("model") == null && ((List<?>) r.get("children")).isEmpty());
+        if (allowedApps != null || allowedMenus != null) {
+            pruneEmptyFolderMenus(roots);
         }
         return roots;
+    }
+
+    /**
+     * 按当前操作者自身被授权的范围，返回可继续向下级分站或角色分发的应用与激活叶子菜单分组。
+     */
+    public List<Map<String, Object>> listAssignableMenus() {
+        Set<String> allowedApps = resolveTenantAllowedApps();
+        Set<String> allowedMenus = resolveEffectiveAllowedMenus();
+
+        Map<String, String> appDisplayNames = new LinkedHashMap<>();
+        for (Map<String, Object> ap : iamAppService.listPublicApps()) {
+            String appName = String.valueOf(ap.get("name"));
+            if (allowedApps == null || allowedApps.contains(appName)) {
+                String disp = ap.get("displayName") != null ? String.valueOf(ap.get("displayName")) : appName;
+                appDisplayNames.put(appName, disp);
+            }
+        }
+
+        Map<String, ModelAggregate> modelMap = new HashMap<>();
+        for (ModelAggregate m : modelRepo.findAllModels()) {
+            modelMap.put(m.getName(), m);
+        }
+
+        Map<String, List<Map<String, Object>>> menusByApp = new LinkedHashMap<>();
+        for (String appName : appDisplayNames.keySet()) {
+            menusByApp.put(appName, new ArrayList<>());
+        }
+
+        List<MenuNode> allMenus = new ArrayList<>(uiRepo.findAllMenus());
+        allMenus.sort(Comparator.comparingInt(MenuNode::getSequence));
+        for (MenuNode menu : allMenus) {
+            if (!menu.isActive()) continue;
+            if (menu.getModel() == null || menu.getModel().isBlank()) continue;
+            String appName = menu.getAppName();
+            if (appName == null || "platform_kernel".equals(appName)) continue;
+            if (allowedApps != null && !allowedApps.contains(appName)) continue;
+            if (allowedMenus != null && !matchesAllowedMenu(allowedMenus, menu)) continue;
+            ModelAggregate agg = modelMap.get(menu.getModel());
+            if (agg == null || !agg.isAvailableForRuntime()) continue;
+            ModelSnapshot snap = memoryRegistry.getActiveSnapshotOrNull(menu.getModel());
+            if (snap != null && (snap.isAbstractModel() || snap.isExtensionPackage())) continue;
+
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", menu.getId());
+            item.put("name", menu.getName());
+            item.put("displayName", menu.getDisplayName());
+            item.put("model", menu.getModel());
+            item.put("parentId", menu.getParentId());
+            item.put("icon", menu.getIcon());
+            item.put("sequence", menu.getSequence());
+            menusByApp.computeIfAbsent(appName, k -> new ArrayList<>()).add(item);
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map.Entry<String, List<Map<String, Object>>> e : menusByApp.entrySet()) {
+            Map<String, Object> grp = new LinkedHashMap<>();
+            grp.put("appName", e.getKey());
+            grp.put("appDisplayName", appDisplayNames.getOrDefault(e.getKey(), e.getKey()));
+            grp.put("menus", e.getValue());
+            result.add(grp);
+        }
+        return result;
     }
 
     /**
@@ -138,6 +206,27 @@ public class UiSchemaAppService {
                 && !"platform_kernel".equals(snap.getAppName())
                 && !allowedApps.contains(snap.getAppName())) {
             throw DomainException.permissionDenied("访问拒绝：当前租户未授权使用应用 [" + snap.getAppName() + "]");
+        }
+        Set<String> allowedMenus = resolveEffectiveAllowedMenus();
+        if (allowedMenus != null && snap.getAppName() != null && !"platform_kernel".equals(snap.getAppName())) {
+            List<MenuNode> boundMenus = new ArrayList<>();
+            for (MenuNode m : uiRepo.findAllMenus()) {
+                if (m.isActive() && modelName.equals(m.getModel())) {
+                    boundMenus.add(m);
+                }
+            }
+            if (!boundMenus.isEmpty()) {
+                boolean permitted = false;
+                for (MenuNode m : boundMenus) {
+                    if (matchesAllowedMenu(allowedMenus, m)) {
+                        permitted = true;
+                        break;
+                    }
+                }
+                if (!permitted) {
+                    throw DomainException.permissionDenied("访问拒绝：当前账号未获授权打开页面 [" + agg.getDisplayName() + "]");
+                }
+            }
         }
 
         Map<String, Object> viewsMap = new LinkedHashMap<>();
@@ -211,6 +300,72 @@ public class UiSchemaAppService {
             return null;
         }
         return iamAppService.resolveAllowedAppNames(ctx.getTenantId());
+    }
+
+    /**
+     * 计算当前用户生效的菜单白名单（返回 null 表示按租户已授权应用展示全部激活菜单）：
+     * 1) 租户级 authorizedMenus（递归继承上级分站限制）与
+     * 2) 用户所分配角色中的显式 allowedMenus（多受限角色取并集）
+     * 二者均存在限制时取交集，防止越过上级分站或自身角色越权查看/打开页面。
+     */
+    private Set<String> resolveEffectiveAllowedMenus() {
+        MetaContext ctx = MetaContext.current();
+        if (ctx == null || (MetaContext.DEFAULT_TENANT.equals(ctx.getTenantId()) && ctx.isSuperUser())) {
+            return null;
+        }
+        Set<String> tenantMenus = iamAppService.resolveAllowedMenuNames(ctx.getTenantId());
+        Set<String> roleMenus = null;
+        if (!ctx.isSuperUser() && ctx.getRoleCodes() != null && !ctx.getRoleCodes().isEmpty()) {
+            List<RoleDef> roles = iamAppService.resolveRoles(ctx.getRoleCodes());
+            Set<String> unionExplicit = new LinkedHashSet<>();
+            boolean hasExplicitRestriction = false;
+            for (RoleDef r : roles) {
+                List<String> rm = r.getAllowedMenus();
+                if (rm != null && !rm.isEmpty() && !rm.contains("*")) {
+                    hasExplicitRestriction = true;
+                    for (String m : rm) {
+                        if (m != null && !m.isBlank() && !"__NONE__".equals(m)) {
+                            unionExplicit.add(m.trim());
+                        }
+                    }
+                }
+            }
+            if (hasExplicitRestriction) {
+                roleMenus = unionExplicit;
+            }
+        }
+        if (tenantMenus == null && roleMenus == null) {
+            return null;
+        }
+        if (tenantMenus != null && roleMenus != null) {
+            Set<String> intersected = new LinkedHashSet<>(tenantMenus);
+            intersected.retainAll(roleMenus);
+            return intersected;
+        }
+        return tenantMenus != null ? tenantMenus : roleMenus;
+    }
+
+    private boolean matchesAllowedMenu(Set<String> allowedMenus, MenuNode menu) {
+        if (allowedMenus == null) return true;
+        if (menu.getName() != null && allowedMenus.contains(menu.getName())) return true;
+        return menu.getId() != null && allowedMenus.contains(menu.getId());
+    }
+
+    @SuppressWarnings("unchecked")
+    private void pruneEmptyFolderMenus(List<Map<String, Object>> nodes) {
+        Iterator<Map<String, Object>> it = nodes.iterator();
+        while (it.hasNext()) {
+            Map<String, Object> node = it.next();
+            Object rawChildren = node.get("children");
+            if (rawChildren instanceof List<?> childList && !childList.isEmpty()) {
+                pruneEmptyFolderMenus((List<Map<String, Object>>) rawChildren);
+            }
+            boolean isFolder = node.get("model") == null || String.valueOf(node.get("model")).isBlank();
+            boolean hasChildren = node.get("children") instanceof List<?> cl && !cl.isEmpty();
+            if (isFolder && !hasChildren) {
+                it.remove();
+            }
+        }
     }
 
     private Map<String, Object> buildGranularAuth(String modelName, ModelSnapshot snap) {

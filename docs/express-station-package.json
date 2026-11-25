@@ -10,8 +10,8 @@
     "dependencies": [],
     "state": "INSTALLED",
     "createUser": "usr_admin",
-    "createDate": "2026-11-25 23:14:45",
-    "updateDate": "2026-11-25 23:14:45"
+    "createDate": "2026-11-25 23:45:51",
+    "updateDate": "2026-11-25 23:45:51"
   },
   "models": [
     {
@@ -2275,6 +2275,7 @@
                 }
               ],
               "edit": {
+                "type": "form",
                 "columns": [
                   {
                     "name": "tracking_no",
@@ -2288,8 +2289,7 @@
                     "name": "note",
                     "displayName": "验视备注"
                   }
-                ],
-                "type": "form"
+                ]
               }
             },
             "tbar": [

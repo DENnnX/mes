@@ -111,21 +111,34 @@ public class PlatformKernelBootstrap {
             iamAppService.saveRole(userRole);
         }
 
-        if (iamAppService.listRoles().stream().noneMatch(r -> "ROLE_TENANT_ADMIN".equals(r.getCode()))) {
+        Set<String> tenantAdminRequiredServices = Set.of(
+                "*:search", "*:count", "*:exists", "*:find", "*:create", "*:update", "*:delete",
+                "*:lookup", "*:action", "*:addMissingDefaultValues", "*:getSelectionOptions",
+                "ui_*:*", "ui_menu:listAssignableMenus", "meta_dict:itemsByType", "meta_dict:listTypes",
+                "meta_code_rule:generateCode", "meta_file:*",
+                "rbac_tenant:listTenants", "rbac_tenant:search", "rbac_tenant:saveTenant",
+                "rbac_tenant:authorizeApps", "rbac_tenant:authorizeMenus",
+                "rbac_user:listUsers", "rbac_user:search", "rbac_user:saveUser", "rbac_user:resetPassword", "rbac_user:deleteUser",
+                "rbac_org:*",
+                "rbac_role:listRoles", "rbac_role:search", "rbac_role:saveRole", "rbac_role:deleteRole", "rbac_role:permissionCatalog");
+        Optional<com.sie.lowcode.domain.iam.RoleDef> existingTenantAdmin = iamAppService.listRoles().stream()
+                .filter(r -> "ROLE_TENANT_ADMIN".equals(r.getCode()))
+                .findFirst();
+        if (existingTenantAdmin.isEmpty()) {
             com.sie.lowcode.domain.iam.RoleDef tAdminRole = new com.sie.lowcode.domain.iam.RoleDef();
             tAdminRole.setId("role_tenant_admin");
             tAdminRole.setCode("ROLE_TENANT_ADMIN");
             tAdminRole.setName("企业/分站主管 (本租户及下属分站授权与账号管理)");
             tAdminRole.setDataScope("ALL");
-            tAdminRole.setAllowedServices(Set.of(
-                    "*:search", "*:count", "*:exists", "*:find", "*:create", "*:update", "*:delete",
-                    "*:lookup", "*:action", "*:addMissingDefaultValues", "*:getSelectionOptions",
-                    "ui_*:*", "meta_dict:itemsByType", "meta_dict:listTypes", "meta_code_rule:generateCode",
-                    "meta_file:*",
-                    "rbac_tenant:listTenants", "rbac_tenant:search", "rbac_tenant:saveTenant", "rbac_tenant:authorizeApps",
-                    "rbac_user:listUsers", "rbac_user:search", "rbac_user:saveUser", "rbac_user:resetPassword", "rbac_user:deleteUser",
-                    "rbac_org:*", "rbac_role:listRoles", "rbac_role:search"));
+            tAdminRole.setAllowedServices(new LinkedHashSet<>(tenantAdminRequiredServices));
             iamAppService.saveRole(tAdminRole);
+        } else {
+            com.sie.lowcode.domain.iam.RoleDef tAdminRole = existingTenantAdmin.get();
+            Set<String> merged = new LinkedHashSet<>(tAdminRole.getAllowedServices());
+            if (merged.addAll(tenantAdminRequiredServices)) {
+                tAdminRole.setAllowedServices(merged);
+                iamAppService.saveRole(tAdminRole);
+            }
         }
 
         if (iamAppService.listUsers().isEmpty()) {
@@ -286,6 +299,7 @@ public class PlatformKernelBootstrap {
 
         // UI & Menu 服务
         ext.registerOverride("ui_menu", "loadMenu", "kernel", (rs, args) -> uiService.loadMenu());
+        ext.registerOverride("ui_menu", "listAssignableMenus", "kernel", (rs, args) -> uiService.listAssignableMenus());
         ext.registerOverride("ui_view", "loadView", "kernel", (rs, args) ->
                 uiService.loadView(str(args.get("model")), str(args.get("type"))));
 
