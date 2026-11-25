@@ -1,65 +1,168 @@
-# 模型驱动低代码开发平台（Low-Code Platform v2.1.0）
+# 可视化模型驱动低代码开发平台（Low-Code Platform v2.1.0）
 
-基于 **Java 17 + Spring Boot 2.7 + SQLite + Groovy + Vue 3 / Element Plus** 构建的**模型驱动低代码开发平台**。严格采用 **DDD（领域驱动设计）** 分层架构，深度集成通用企业级元数据引擎特性。
+基于 **Java 17 + Spring Boot 2.7 + SQLite + Groovy + Vue 3 / Element Plus** 构建的**可视化模型驱动低代码开发平台**。后端严格遵循 **DDD（领域驱动设计）** 四层架构，前端具备独立统一登录页、通俗易懂的可视化管理后台与纯元视图动态渲染能力。
 
-本仓库为**纯通用低代码底座实现**，启动自举仅注入平台自身内核、默认租户与 RBAC 认证元数据，**不包含任何预设业务示例**。开发者可通过 JSON 应用包或在线建模工作台动态定义任意领域模型与服务，平台即时同步物理 Schema、生成 JSON-RPC 2.0 服务接口、动态菜单与多形态视图，并提供数据字典、自动流水编码、多租户隔离、组织权限树及自动化 Swagger 风格接口文档。
+本仓库为**纯通用低代码底座实现**，首次启动仅初始化平台基础底座、默认根租户与内置权限角色，**不包含任何硬编码业务示例**。系统管理员与设计人员可通过 JSON 应用包或在线设计台定义数据表、字段校验、编号规则与状态流转动作，平台自动完成建表改表、动态接口生成与页面渲染，并支持按**多租户**隔离数据与**应用授权登录控制**。
+
+---
+
+## 项目结构
+
+```text
+.
+├── README.md                         # 项目说明与部署指南
+├── docs/                             # 架构设计文档（SRS / DDD / 状态机 / JSON-RPC 契约）
+├── schemas/app-package-schema.json   # 应用配置包 JSON Schema 规范
+└── lowcode-platform/                 # 核心源码工程（Maven + Spring Boot + Vue 3 SPA）
+    ├── pom.xml                       # Maven 构建与依赖配置（Java 17）
+    ├── Dockerfile                    # Docker 镜像构建文件
+    ├── docker-compose.yml            # Docker Compose 编排配置（默认端口 8088）
+    └── src/
+        ├── main/java/com/sie/lowcode/
+        │   ├── interfaces/           # 统一 JSON-RPC 2.0 网关、4环责任链与文件上传下载接口
+        │   ├── application/          # 应用编排（模型治理、UI渲染、字典编码、多租户IAM、API文档）
+        │   ├── domain/               # 领域模型、继承与影响分析、RecordSet、Filter DSL、验证钩子
+        │   └── infrastructure/       # 动态 SQL/DDL 引擎、SQLite 仓储、Groovy 执行器、内存容器
+        ├── main/resources/
+        │   ├── application.properties
+        │   └── static/index.html     # 独立登录页 + 管理后台 + 动态应用使用端前端单页应用
+        └── test/java/...             # 8 项端到端集成测试
+```
 
 ---
 
 ## 核心特性
 
-1. **纯正 DDD 四层架构 (`com.sie.lowcode`)**：
-   - `interfaces`：`JsonRpcController` 4 环职责链（`AuthRpcHandler` -> `BuildMetaRpcHandler` -> `PermissionRpcHandler` -> `ExecuteMetaRpcHandler`）及 REST 文件附件接口 `FileController`（`/api/files/upload`、`/api/files/{fileId}`）。
-   - `application`：`MetaGovernanceAppService`、`UiSchemaAppService`、`FoundationAppService`（字典 / 编码规则 / 自动 API 文档 / 权限目录）、`IamAppService`（多租户 / 组织树 / 用户 / 角色）、`PlatformKernelBootstrap`。
-   - `domain`：`ModelAggregate`、`AppAggregate`、`ModelVersion`、`ModelInheritanceDomainService`（抽象继承 `abstractModel`/`parents` 与非侵入扩展包 `extendModel`）、`RecordSet`（多层级 `callSuper` 重写链、`validate` 前置钩子、`ServiceActionResult` UI 指令）、`FilterDsl`（扁平/嵌套波兰前缀 `&` / `|`）、`DictTypeDef`/`DictItemDef`/`CodeRuleDef`/`TenantDef`/`OrgNode`。
-   - `infrastructure`：`DynamicSqlEngine`（跳过抽象/扩展表 DDL、复合索引、中间表 DDL）、`DynamicDataAccessorImpl`（多租户 `tenant_id` 隔离、`related` 级联带出、`computeMethod`/`computeScript`、`codeRule` 自动编码、`@Validate` 全约束、`ManyToMany` `[4,id]`/`[3,id]`/`[6,0,ids]`、`useDisplayForModel` 字典与外键翻译）、`GroovyScriptExecutorImpl`、`SqliteFoundationRepository`。
-2. **统一 JSON-RPC 2.0 协议与通用能力服务**：
-   - 内置标准通用服务：`search`、`count`、`exists`、`find`、`create`、`update`（含乐观锁）、`delete`、`lookup`、`addMissingDefaultValues`、`getSelectionOptions`。
-   - 通用平台中心服务：`meta_dict`（动态字典与标签染色）、`meta_code_rule`（前缀+日期+流水号自增生成器）、`rbac_tenant`（租户管理及授权应用范围）、`rbac_org`（多租户组织架构树）、`rbac_role`（细粒度权限目录树）、`api_doc`（自动 API 文档与试调模板）。
-3. **版本演进治理与异人双审清除**：
-   - **影响检查 (`checkImpact`)**：校验 Groovy AST 语法、继承/扩展拓扑、`displayForModel` 告警提示及视图/引用图阻断。
-   - **双人互斥清除 (`offline` -> `exportData` -> `applyPurge` -> `confirmPurge`)**：强制导出凭据，禁止同身份自审终批（`-32004`），保留 `meta_purge_audit` 审计记录。
-4. **纯元视图驱动前端 (`static/index.html`)**：
-   - **开发者工作台**：多页签顶部导航、多皮肤主题切换、模型设计器（含继承/扩展/复合索引/字段高级规则）、列表/卡片应用视图、数据字典与规则配置、租户/组织/权限树配置、自动 API 接口文档与调试台。
-   - **动态运行端**：遵循 `ui_view.loadView` 返回的 `auth` 裁切按钮，支持 `保存并新增`、动态默认值初始化、多选 `Dict`、文件上传下载、`ManyToMany` 左右选择器（`addEr`）、`OneToMany` 内嵌与弹窗编辑（`updateEr`）、列表/卡片切换、列显隐设置及服务端 UI 指令弹窗联动。
+1. **独立安全登录与多租户应用授权管控**：
+   - 未登录默认展示独立「欢迎登录」页面，支持选择目标登录应用或自动进入已授权工作区；
+   - **租户隔离与登录拦截**：不同租户的业务数据按 `tenant_id` 自动隔离；非系统管理员账号登录后仅能访问所属租户被管理员授权的应用，尝试登录管理后台或未授权应用将被登录门禁与网关双重拦截；
+   - **系统管理员集中授权**：管理员可在管理后台「租户与应用授权」创建企业租户、勾选分配可登录应用、开设租户账号及重置密码。
+2. **模型驱动零代码构建（可视化设计 + JSON 应用包）**：
+   - 支持单行文本、多行文本、整数/小数、布尔、日期/时间、固定选项、动态数据字典（`@Dict`）、`ManyToOne` / `OneToMany` / `ManyToMany` 关联关系、文件附件、自动流水编号（`codeRule`）、`related` 关联带出与 `computeScript` 计算字段；
+   - 支持模板表复用（`abstractModel` / `parents`）、非侵入式表扩展（`extendModel`）、防重复联合索引及 `rs.callSuper(...)`、`validate` 保存前钩子与服务端 `JsonRpcServiceResponse` UI 指令反馈。
+3. **版本安全演进与双人复核清理**：
+   - 发布前自动进行影响分析与引用扫描，阻断破坏性删字段并支持 `display=false` 兼容退役与无损版本回滚；
+   - 数据表下线与彻底销毁须满足保留期、备份导出凭据、零引用、零业务数据守卫，并强制**申请人和终审管理员双人互斥**。
 
 ---
 
-## 快速构建、测试与 Docker 部署
+## 完整部署指南
 
-> **端口约定**：默认运行端口为 **`8088`**（已避开 `8080`、`80`、`9000`、`9001`、`6379`、`5432`）。
+> **端口约定**：平台默认监听 **`8088`** 端口（避开 `8080`、`80`、`9000`、`9001`、`6379`、`5432` 常见占用端口）。
 
-### 1. 编译与集成测试
+### 环境前提
+
+| 工具 | 最低版本要求 | 说明 |
+| :--- | :--- | :--- |
+| **JDK** | `17+` | 运行与编译 Java 后端 |
+| **Maven** | `3.8+` | 构建项目并运行集成测试（生成 Fat JAR） |
+| **Docker & Docker Compose** | Docker Engine 20+ / Compose v2+ | 方式一容器化一键部署需要 |
+
+### 0. 获取代码
+
+```bash
+git clone https://github.com/wonderful-sf/mes.git
+cd mes/lowcode-platform
+```
+
+---
+
+### 方式一：Docker Compose 容器化部署（推荐）
+
+> **重要说明**：`Dockerfile` 会打包复制 `target/lowcode-platform-2.0.0.jar`，因此构建镜像前**必须先执行 `mvn clean package`** 编译出 JAR 包。
+
+#### 1）编译打包并运行全量集成测试
+
+```bash
+mvn clean package
+```
+
+> 如需跳过测试快速打包，可执行 `mvn clean package -DskipTests`。
+
+#### 2）启动容器（后台运行，数据自动持久化）
+
+```bash
+docker compose up -d --build
+```
+
+- 默认将宿主机 `lowcode-platform/data/` 目录挂载到容器内 `/app/data`，持久化保存 SQLite 数据库（`lowcode.db`）和用户上传的附件（`uploads/`）。
+- 端口映射为宿主机 **`8088`** -> 容器内 **`8088`**。
+
+#### 3）常用运维命令
+
+```bash
+# 查看启动日志（看到 "Started LowCodeApplication" 即表示就绪）
+docker logs -f lowcode-platform-app
+
+# 停止并移除容器（保留 data/ 内的数据）
+docker compose down
+
+# 如需清空数据恢复全新初始库
+docker compose down
+rm -rf ./data
+docker compose up -d
+```
+
+---
+
+### 方式二：本机直接运行（无需 Docker）
+
+#### 选项 A：使用 Maven 直接启动开发模式
+
+```bash
+cd lowcode-platform
+mvn spring-boot:run
+```
+
+#### 选项 B：先打包再通过 `java -jar` 运行可执行 JAR
 
 ```bash
 cd lowcode-platform
 mvn clean package
+java -jar target/lowcode-platform-2.0.0.jar
 ```
 
-### 2. Docker 一键部署（推荐）
+- 默认会在当前工作目录下自动创建 `./data/lowcode.db` 与 `./data/uploads/`。
+- 如需自定义端口或数据库路径，可通过命令行参数覆盖：
 
 ```bash
-cd lowcode-platform
-docker compose up -d --build
+java -Dserver.port=8089 -DDB_PATH=./my-data/lowcode.db -jar target/lowcode-platform-2.0.0.jar
 ```
-
-启动完成后访问：
-- **平台工作台与动态运行端**：`http://localhost:8088/`
-- **健康检查**：`GET http://localhost:8088/api/health`
-- **统一 JSON-RPC 网关**：`POST http://localhost:8088/rbac_tenant_root/rpc/service`
-
-### 3. 内置体验账号（用于切换验证 RBAC 与双人互斥）
-
-| 用户名 | 密码 | 角色 | 典型用途 |
-| :--- | :--- | :--- | :--- |
-| `developer` | `123456` | `ROLE_DEVELOPER`, `ROLE_PUBLISHER` | 建模、生成视图、影响检查、发布、回滚、下线与申请清除 |
-| `auditor` | `123456` | `ROLE_ADMIN` | 独立终审确认清除（与 `developer` 构成异人双审互斥） |
-| `admin` | `123456` | `ROLE_ADMIN`, `ROLE_DEVELOPER`, `ROLE_PUBLISHER` | 超级管理员（用户与角色管理） |
-| `user` | `123456` | `ROLE_APP_USER` | 普通业务用户（仅操作动态运行端页面 CRUD 与业务动作） |
 
 ---
 
-## 设计文档索引 (`D:\MES\docs\`)
+## 访问验证与首次使用指南
+
+部署启动完成后，在浏览器打开：
+
+- **平台访问地址（统一登录页）**：http://localhost:8088/
+- **健康检查接口**：`GET http://localhost:8088/api/health`（返回 `{"status":"UP", ...}`）
+- **统一 JSON-RPC 2.0 网关**：`POST http://localhost:8088/rbac_tenant_root/rpc/service`
+
+### 1. 内置体验账号（默认密码均为 `123456`）
+
+| 用户名 | 密码 | 角色定位 | 典型用途 |
+| :--- | :--- | :--- | :--- |
+| `admin` | `123456` | 系统管理员 + 设计员 + 发布员 | 管理企业租户、分配租户可用应用授权、创建员工账号、配置角色权限及全平台操作 |
+| `developer` | `123456` | 应用设计员 + 上线管理员 | 在线设计数据表、导入导出 JSON 配置包、生成页面、影响检查、上线/回滚/申请清理 |
+| `auditor` | `123456` | 独立安全审核员 | 对 `developer` 或 `admin` 发起的数据表彻底销毁申请执行双人互斥终审确认 |
+| `user` | `123456` | 默认根租户普通业务用户 | 仅进入「应用使用端」操作日常单据，无权进入「管理后台」 |
+
+### 2. 多租户与授权登录典型体验流程
+
+1. 打开 http://localhost:8088/ ，点击 **「系统管理员 (admin)」** 一键登录进入「管理后台」。
+2. 在 **「应用管理与导入导出」** 中填入空白模板或自定义 JSON 应用包，点击「校验并导入」（默认自动上线生效）。
+3. 切换至 **「租户与应用授权」**：
+   - 点击 **「+ 新增租户」** 创建新租户；
+   - 点击该租户行上的 **「管理应用授权」**，仅勾选允许该租户访问的应用并保存；
+   - 点击 **「分配账号」** 为该租户创建业务账号（如 `ROLE_APP_USER`）。
+4. 点击右上角头像 **「退出到登录页面」**，使用新创建的租户账号登录：
+   - 若选择了未向该租户授权的应用或「管理后台」，系统将直接拒绝登录并提示未授权；
+   - 选择已授权应用或「自动进入已授权应用」，登录后直接进入「应用使用端」，且仅能看到及操作该租户被授权的应用模块。
+
+---
+
+## 设计文档索引 (`docs/`)
 
 - [01_SRS_软件需求规格说明书.md](docs/01_SRS_软件需求规格说明书.md)
 - [02_DDD领域建模与数据模型设计.md](docs/02_DDD领域建模与数据模型设计.md)
