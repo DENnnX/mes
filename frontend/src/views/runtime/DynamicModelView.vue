@@ -1,122 +1,122 @@
 <template>
-  <div v-loading="loading">
+  <div v-loading="loading" class="runtime-page">
     <!-- 顶部模型头部与视图工具 -->
-    <div v-if="viewData.modelMeta" class="lc-card" style="padding:13px 18px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
-        <div>
-          <h2 style="margin:0;font-size:17px;color:#0f172a;">
-            {{ pageTitle }}
-            <el-tag size="small" type="success" style="margin-left:8px;">v{{ viewData.modelMeta?.versionNo }}</el-tag>
-            <el-tag v-if="viewData.auth?.create" size="small" effect="plain" style="margin-left:6px;">可录入</el-tag>
-            <el-tag v-if="viewData.auth?.update" size="small" effect="plain" style="margin-left:4px;">可修改</el-tag>
-            <el-tag v-if="viewData.auth?.delete" size="small" effect="plain" style="margin-left:4px;">可删除</el-tag>
-          </h2>
-          <div style="font-size:12px;color:#64748b;margin-top:3px;">当前租户数据独立隔离 · 支持多条件查询、表单维护与业务流转</div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <el-button size="small" @click="exportRuntimeCsv">导出表格</el-button>
-          <el-radio-group v-model="displayMode" size="small">
-            <el-radio-button value="table">表格</el-radio-button>
-            <el-radio-button value="cards">卡片</el-radio-button>
-          </el-radio-group>
-          <el-popover placement="bottom-end" :width="210" trigger="click">
-            <template #reference><el-button size="small">显示列</el-button></template>
-            <div style="font-size:12px;font-weight:600;margin-bottom:6px;">勾选列表展示字段</div>
-            <el-checkbox-group v-model="visibleGridColumnNames" style="display:flex;flex-direction:column;gap:4px;">
-              <el-checkbox v-for="c in runtimeGridColumns" :key="c.name" :value="c.name">
-                {{ c.displayName || getFieldMeta(c.name)?.displayName || c.name }}
-              </el-checkbox>
-            </el-checkbox-group>
-          </el-popover>
-          <el-button v-if="authStore.canAccessStudio" size="small" @click="openModelDesigner">修改字段设计</el-button>
-          <el-button size="small" type="primary" plain @click="refreshAll">刷新</el-button>
-        </div>
+    <header v-if="viewData.modelMeta" class="runtime-heading">
+      <h1>{{ pageTitle }}</h1>
+      <div class="runtime-heading-tools">
+        <el-button size="small" :icon="Download" @click="exportRuntimeCsv">导出表格</el-button>
+        <el-button v-if="authStore.canAccessStudio" size="small" @click="openModelDesigner">字段设计</el-button>
+        <el-button size="small" :icon="Refresh" @click="refreshAll">刷新</el-button>
       </div>
-    </div>
+    </header>
 
-    <!-- 搜索区 -->
-    <div v-if="viewData.modelMeta && runtimeSearchColumns.length > 0" class="lc-card">
-      <div class="lc-search-grid">
-        <div
-          v-for="col in runtimeSearchColumns"
-          :key="col.name"
-          class="lc-search-item"
-          :class="{ 'lc-search-range': isFieldDate(col.name) }"
-        >
-          <div class="lc-search-label">{{ col.displayName || getFieldMeta(col.name)?.displayName || col.name }}</div>
-          <template v-if="isFieldSelectionOrDict(col.name)">
-            <el-select v-model="searchValues[col.name]" clearable size="small" style="width:100%;" placeholder="全部">
-              <el-option v-for="opt in getFieldOptions(col.name)" :key="opt.value" :label="opt.label" :value="opt.value" />
-            </el-select>
-          </template>
-          <template v-else-if="isFieldBoolean(col.name)">
-            <el-select v-model="searchValues[col.name]" clearable size="small" style="width:100%;" placeholder="全部">
-              <el-option :value="true" label="是" />
-              <el-option :value="false" label="否" />
-            </el-select>
-          </template>
-          <template v-else-if="isFieldManyToOne(col.name)">
-            <el-select
-              v-model="searchValues[col.name]"
-              clearable
-              filterable
-              remote
-              :remote-method="(kw) => fetchLookup(col.name, kw)"
-              @visible-change="(vis) => { if (vis) fetchLookup(col.name, ''); }"
-              size="small"
-              style="width:100%;"
-              placeholder="选择关联项"
-            >
-              <el-option v-for="opt in (lookupOptionsMap[col.name] || [])" :key="opt.value" :label="opt.label" :value="opt.value" />
-            </el-select>
-          </template>
-          <template v-else-if="isFieldDate(col.name)">
-            <el-date-picker
-              v-model="searchValues[col.name]"
-              :type="getFieldDataType(col.name) === 'datetime' ? 'datetimerange' : 'daterange'"
-              :value-format="getFieldDataType(col.name) === 'datetime' ? 'YYYY-MM-DD HH:mm:ss' : 'YYYY-MM-DD'"
-              range-separator="至"
-              start-placeholder="开始"
-              end-placeholder="结束"
-              size="small"
-              style="width:100%;"
-            />
-          </template>
-          <template v-else-if="isFieldNumber(col.name)">
-            <el-input-number v-model="searchValues[col.name]" size="small" style="width:100%;" />
-          </template>
-          <template v-else>
-            <el-input v-model="searchValues[col.name]" clearable size="small" :placeholder="'输入' + (col.displayName || col.name)" @keyup.enter="executeSearch(0)" />
-          </template>
+    <section v-if="viewData.modelMeta" class="runtime-results" :aria-label="pageTitle + '记录'">
+      <!-- 搜索区 -->
+      <form v-if="runtimeSearchColumns.length > 0" class="runtime-filters" aria-label="筛选记录" @submit.prevent="executeSearch(0)">
+        <div class="lc-search-grid">
+          <div
+            v-for="col in runtimeSearchColumns"
+            :key="col.name"
+            class="lc-search-item"
+            :class="{ 'lc-search-range': isFieldDate(col.name) }"
+          >
+            <div class="lc-search-label">{{ fieldLabel(col) }}</div>
+            <template v-if="isFieldSelectionOrDict(col.name)">
+              <el-select v-model="searchValues[col.name]" :aria-label="fieldLabel(col)" clearable style="width:100%;" placeholder="全部">
+                <el-option v-for="opt in getFieldOptions(col.name)" :key="opt.value" :label="opt.label" :value="opt.value" />
+              </el-select>
+            </template>
+            <template v-else-if="isFieldBoolean(col.name)">
+              <el-select v-model="searchValues[col.name]" :aria-label="fieldLabel(col)" clearable style="width:100%;" placeholder="全部">
+                <el-option :value="true" label="是" />
+                <el-option :value="false" label="否" />
+              </el-select>
+            </template>
+            <template v-else-if="isFieldManyToOne(col.name)">
+              <el-select
+                v-model="searchValues[col.name]"
+                :aria-label="fieldLabel(col)"
+                clearable
+                filterable
+                remote
+                :remote-method="(kw) => fetchLookup(col.name, kw)"
+                @visible-change="(vis) => { if (vis) fetchLookup(col.name, ''); }"
+                style="width:100%;"
+                placeholder="选择关联项"
+              >
+                <el-option v-for="opt in (lookupOptionsMap[col.name] || [])" :key="opt.value" :label="opt.label" :value="opt.value" />
+              </el-select>
+            </template>
+            <template v-else-if="isFieldDate(col.name)">
+              <el-date-picker
+                v-model="searchValues[col.name]"
+                :aria-label="fieldLabel(col)"
+                :type="getFieldDataType(col.name) === 'datetime' ? 'datetimerange' : 'daterange'"
+                :value-format="getFieldDataType(col.name) === 'datetime' ? 'YYYY-MM-DD HH:mm:ss' : 'YYYY-MM-DD'"
+                range-separator="至"
+                start-placeholder="开始"
+                end-placeholder="结束"
+                style="width:100%;"
+              />
+            </template>
+            <template v-else-if="isFieldNumber(col.name)">
+              <el-input-number v-model="searchValues[col.name]" :aria-label="fieldLabel(col)" style="width:100%;" />
+            </template>
+            <template v-else>
+              <el-input v-model="searchValues[col.name]" :aria-label="fieldLabel(col)" clearable :placeholder="'输入' + fieldLabel(col)" />
+            </template>
+          </div>
+          <div class="runtime-filter-actions">
+            <el-button type="primary" native-type="submit">查询</el-button>
+            <el-button @click="resetSearch">重置</el-button>
+          </div>
         </div>
-        <div style="display:flex;gap:8px;padding-bottom:1px;">
-          <el-button type="primary" size="small" @click="executeSearch(0)">查询</el-button>
-          <el-button size="small" @click="resetSearch">重置</el-button>
-        </div>
-      </div>
-    </div>
+      </form>
 
-    <!-- 列表区域 -->
-    <div class="lc-card">
-      <div class="lc-toolbar">
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <!-- 列表区域 -->
+      <div class="runtime-grid-toolbar">
+        <div class="runtime-grid-summary">
+          <span aria-live="polite">共 <strong>{{ gridTotal }}</strong> 条记录</span>
+          <span v-if="selectedIds.length">已选 {{ selectedIds.length }} 条</span>
           <template v-for="btn in runtimeGridTbar" :key="btn.name">
             <el-button v-if="isButtonPermitted(btn)" :type="mapButtonType(btn.type)" size="small" @click="handleGridTbarButton(btn)">
               {{ btn.name }}
             </el-button>
           </template>
         </div>
-        <div style="font-size:12px;color:#64748b;">共 {{ gridTotal }} 条数据</div>
+        <div class="runtime-grid-tools">
+          <el-radio-group v-model="displayMode" size="small" aria-label="记录视图">
+            <el-radio-button value="table">表格</el-radio-button>
+            <el-radio-button value="cards">卡片</el-radio-button>
+          </el-radio-group>
+          <el-popover placement="bottom-end" :width="210" trigger="click">
+            <template #reference><el-button size="small" :icon="SetUp">显示列</el-button></template>
+            <el-checkbox-group v-model="visibleGridColumnNames" class="runtime-columns" aria-label="列表显示字段">
+              <el-checkbox v-for="c in runtimeGridColumns" :key="c.name" :value="c.name">
+                {{ fieldLabel(c) }}
+              </el-checkbox>
+            </el-checkbox-group>
+          </el-popover>
+        </div>
       </div>
 
-      <el-table v-if="displayMode === 'table'" :data="gridRows" border stripe size="small" @selection-change="onSelectionChange">
+      <el-table
+        v-if="displayMode === 'table'"
+        class="runtime-table"
+        :data="gridRows"
+        :empty-text="loading ? '正在加载…' : '暂无匹配的记录'"
+        stripe
+        @selection-change="onSelectionChange"
+      >
         <el-table-column type="selection" width="44" />
         <el-table-column
-          v-for="col in effectiveGridColumns"
+          v-for="(col, index) in effectiveGridColumns"
           :key="col.name"
           :prop="col.name"
-          :label="col.displayName || getFieldMeta(col.name)?.displayName || col.name"
-          :min-width="col.width ? undefined : 130"
+          :label="fieldLabel(col)"
+          :align="isFieldNumber(col.name) ? 'right' : 'left'"
+          :class-name="isFieldNumber(col.name) ? 'runtime-table-number' : index === 0 ? 'runtime-table-identifier' : undefined"
+          :min-width="col.width ? undefined : 112"
           :width="col.width || undefined"
           :sortable="col.sortable || false"
         >
@@ -127,9 +127,10 @@
                   {{ getOptionTagLabel(col.name, item) }}
                 </el-tag>
               </template>
-              <el-tag v-else size="small" :type="getOptionTagColor(col.name, row[col.name])">
+              <el-tag v-else-if="row[col.name] != null && row[col.name] !== ''" class="runtime-status" size="small" :type="getOptionTagColor(col.name, row[col.name])">
                 {{ getOptionTagLabel(col.name, row[col.name]) }}
               </el-tag>
+              <span v-else class="runtime-missing">—</span>
             </template>
             <template v-else-if="isFieldBoolean(col.name)">
               <el-tag size="small" :type="row[col.name] ? 'success' : 'info'">{{ row[col.name] ? '是' : '否' }}</el-tag>
@@ -141,36 +142,43 @@
               </el-button>
               <span v-else>-</span>
             </template>
-            <template v-else><span>{{ formatCellValue(row[col.name]) }}</span></template>
+            <span v-else-if="row[col.name] == null || row[col.name] === ''" class="runtime-missing">—</span>
+            <span v-else>{{ formatCellValue(row[col.name]) }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column v-if="runtimeRowButtons.length > 0" label="操作" min-width="225" fixed="right">
+        <el-table-column v-if="runtimeRowButtons.length > 0" label="操作" min-width="208" fixed="right">
           <template #default="{ row }">
-            <template v-for="btn in runtimeRowButtons" :key="btn.name">
-              <el-button v-if="isButtonPermitted(btn) && isRowButtonEnabled(btn, row)" link size="small" :type="mapButtonType(btn.type)" @click="handleRowButton(btn, row)">
-                {{ btn.name }}
-              </el-button>
-            </template>
+            <div class="runtime-row-actions">
+              <template v-for="btn in runtimeRowButtons" :key="btn.name">
+                <el-button v-if="isButtonPermitted(btn) && isRowButtonEnabled(btn, row)" link size="small" :type="mapButtonType(btn.type)" @click="handleRowButton(btn, row)">
+                  {{ btn.name }}
+                </el-button>
+              </template>
+            </div>
           </template>
         </el-table-column>
       </el-table>
 
-      <div v-else class="lc-grid-cards">
+      <div v-else-if="gridRows.length" class="lc-grid-cards runtime-grid-cards">
         <div v-for="row in gridRows" :key="row.id" class="lc-grid-card-item">
-          <div v-for="col in effectiveGridColumns.slice(0, 5)" :key="col.name" style="font-size:12.5px;margin-bottom:4px;">
-            <span style="color:#64748b;">{{ col.displayName || getFieldMeta(col.name)?.displayName || col.name }}：</span>
-            <strong>
-              {{
-                isFieldManyToOne(col.name)
-                  ? formatM2oCell(row[col.name])
-                  : isFieldSelectionOrDict(col.name)
-                    ? getOptionTagLabel(col.name, row[col.name])
-                    : formatCellValue(row[col.name])
-              }}
-            </strong>
-          </div>
-          <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;border-top:1px solid #f1f5f9;padding-top:6px;">
+          <dl class="runtime-card-fields">
+            <div v-for="col in cardGridColumns" :key="col.name">
+              <dt>{{ fieldLabel(col) }}</dt>
+              <dd>
+                <el-tag
+                  v-if="isFieldSelectionOrDict(col.name) && row[col.name] != null && !Array.isArray(row[col.name])"
+                  class="runtime-status"
+                  size="small"
+                  :type="getOptionTagColor(col.name, row[col.name])"
+                >
+                  {{ getOptionTagLabel(col.name, row[col.name]) }}
+                </el-tag>
+                <template v-else>{{ formatCardField(row, col) }}</template>
+              </dd>
+            </div>
+          </dl>
+          <div v-if="runtimeRowButtons.length" class="runtime-row-actions runtime-card-actions">
             <template v-for="btn in runtimeRowButtons" :key="btn.name">
               <el-button v-if="isButtonPermitted(btn) && isRowButtonEnabled(btn, row)" link size="small" :type="mapButtonType(btn.type)" @click="handleRowButton(btn, row)">
                 {{ btn.name }}
@@ -179,17 +187,18 @@
           </div>
         </div>
       </div>
+      <div v-else class="runtime-empty">{{ loading ? '正在加载…' : '暂无匹配的记录' }}</div>
 
-      <div style="margin-top:12px;display:flex;justify-content:flex-end;">
+      <div v-if="gridTotal > pageSize" class="runtime-pagination">
         <el-pagination
-          layout="total, prev, pager, next"
+          layout="prev, pager, next"
           :total="gridTotal"
           :page-size="pageSize"
           :current-page="page"
           @current-change="(p) => executeSearch((p - 1) * pageSize)"
         />
       </div>
-    </div>
+    </section>
 
     <RecordDetailDrawer
       v-model:visible="detailDrawer.visible"
@@ -211,7 +220,7 @@
     />
 
     <!-- 自定义服务参数表单弹窗 -->
-    <el-dialog v-model="serviceParamsModal.visible" :title="serviceParamsModal.title" width="450px" destroy-on-close>
+    <el-dialog v-model="serviceParamsModal.visible" :title="serviceParamsModal.title" width="min(450px, calc(100vw - 24px))" destroy-on-close>
       <el-form label-width="105px" size="small" @submit.prevent>
         <el-form-item v-for="pf in serviceParamsModal.schema" :key="pf.name" :label="pf.displayName || pf.name" :required="pf.required">
           <el-select v-if="pf.dataType === 'Selection' && pf.values" v-model="serviceParamsModal.values[pf.name]" style="width:100%;">
@@ -237,9 +246,10 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import { Download, Refresh, SetUp } from '@element-plus/icons-vue';
 import { rpcCall, downloadFile } from '@/api/rpc';
 import { useAuthStore } from '@/stores/auth';
 import { useAppStore } from '@/stores/app';
@@ -254,8 +264,21 @@ const authStore = useAuthStore();
 const appStore = useAppStore();
 
 const loading = ref(false);
-const displayMode = ref('table');
+const compactViewport = window.matchMedia('(max-width: 780px)');
+const useCompactLayout = ref(compactViewport.matches);
+const selectedDisplayMode = ref('');
+const displayMode = computed({
+  get: () => selectedDisplayMode.value || (useCompactLayout.value ? 'cards' : 'table'),
+  set: (mode) => { selectedDisplayMode.value = mode; }
+});
 const visibleGridColumnNames = ref([]);
+
+function updateCompactLayout(event) {
+  useCompactLayout.value = event.matches;
+}
+
+onMounted(() => compactViewport.addEventListener('change', updateCompactLayout));
+onUnmounted(() => compactViewport.removeEventListener('change', updateCompactLayout));
 
 const viewData = reactive({
   modelMeta: null,
@@ -319,6 +342,28 @@ const {
   getOptionTagLabel,
   getOptionTagColor
 } = useRuntimeFieldMeta(() => viewData);
+
+const cardGridColumns = computed(() => {
+  const columns = effectiveGridColumns.value;
+  const previewColumns = columns.slice(0, 5);
+  const stateColumn = columns.find((col) => getFieldDataType(col.name) === 'selection');
+  if (stateColumn && !previewColumns.includes(stateColumn)) previewColumns.push(stateColumn);
+  return previewColumns;
+});
+
+function fieldLabel(column) {
+  return column.displayName || getFieldMeta(column.name)?.displayName || column.name;
+}
+
+function formatCardField(row, column) {
+  const value = row[column.name];
+  if (value == null || value === '') return '—';
+  if (isFieldManyToOne(column.name)) return formatM2oCell(value);
+  if (isFieldSelectionOrDict(column.name) && Array.isArray(value)) {
+    return value.map((option) => getOptionTagLabel(column.name, option)).join('、');
+  }
+  return formatCellValue(value);
+}
 
 function isButtonPermitted(btn) {
   const auth = viewData.auth || {};
@@ -654,3 +699,119 @@ watch(
   { immediate: true }
 );
 </script>
+
+<style scoped>
+.runtime-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.runtime-heading h1 {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+.runtime-heading-tools,
+.runtime-filter-actions,
+.runtime-grid-summary,
+.runtime-grid-tools,
+.runtime-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+.runtime-heading-tools :deep(.el-button + .el-button),
+.runtime-filter-actions :deep(.el-button + .el-button),
+.runtime-row-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+.runtime-results {
+  min-width: 0;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-panel);
+  background: var(--bg-card);
+}
+.runtime-filters {
+  padding: 16px;
+  border-bottom: 1px solid var(--border-light);
+}
+.runtime-filters .lc-search-item {
+  flex: 0 1 176px;
+  min-width: 128px;
+}
+.runtime-filters .lc-search-range {
+  flex: 0 1 276px;
+  min-width: 240px;
+}
+.runtime-filters .lc-search-label {
+  color: var(--el-text-color-regular);
+  font-weight: 600;
+}
+.runtime-grid-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+  min-height: 49px;
+  padding: 8px 16px;
+}
+.runtime-grid-summary {
+  gap: 8px 14px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.runtime-grid-summary strong { color: var(--text-main); }
+.runtime-columns { display: flex; flex-direction: column; gap: 4px; }
+.runtime-table {
+  --el-table-border-color: var(--border-light);
+  --el-table-header-bg-color: var(--bg-muted);
+  --el-table-header-text-color: var(--text-muted);
+  --el-table-row-hover-bg-color: var(--primary-soft);
+  font-size: 13px;
+}
+.runtime-table :deep(th.el-table__cell) { padding: 8px 0; font-weight: 600; }
+.runtime-table :deep(td.el-table__cell) { padding: 10px 0; }
+.runtime-table :deep(.cell) { padding-inline: 12px; }
+.runtime-table :deep(.runtime-table-number .cell) { font-variant-numeric: tabular-nums; }
+.runtime-table :deep(td.runtime-table-identifier .cell) { font-weight: 650; }
+.runtime-status { border-radius: var(--radius-control); font-weight: 600; }
+.runtime-missing { color: var(--text-muted); }
+.runtime-row-actions :deep(.el-button) { min-height: 24px; padding: 3px 0; }
+.runtime-grid-cards { padding: 0 16px 16px; }
+.runtime-card-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+  margin: 0;
+}
+.runtime-card-fields dt { margin-bottom: 3px; color: var(--text-muted); font-size: 12px; }
+.runtime-card-fields dd { margin: 0; color: var(--text-main); font-size: 13px; font-weight: 600; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.runtime-card-actions { margin-top: 10px; padding-top: 6px; border-top: 1px solid var(--border-light); }
+.runtime-card-actions:empty { display: none; }
+.runtime-empty { padding: 26px 16px; text-align: center; color: var(--text-muted); }
+.runtime-pagination { display: flex; justify-content: flex-end; padding: 8px 16px; }
+
+@media (max-width: 780px) {
+  .runtime-heading h1 { font-size: 21px; }
+  .runtime-filters { padding: 12px; }
+  .runtime-filters .lc-search-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: end;
+  }
+  .runtime-filters .lc-search-item { min-width: 0; }
+  .runtime-filters .lc-search-range { grid-column: 1 / -1; }
+  .runtime-grid-toolbar { padding-inline: 12px; }
+  .runtime-table :deep(.el-table-fixed-column--right) { position: static !important; }
+  .runtime-table :deep(.el-table-fixed-column--right::before) { display: none; }
+  .runtime-grid-cards { grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); }
+}
+</style>

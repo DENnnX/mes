@@ -2,7 +2,7 @@
   <el-drawer
     :model-value="visible"
     :title="'单据详情 - ' + (viewData.modelMeta?.displayName || modelName)"
-    size="620px"
+    size="min(620px, 100vw)"
     destroy-on-close
     @update:model-value="(val) => emit('update:visible', val)"
   >
