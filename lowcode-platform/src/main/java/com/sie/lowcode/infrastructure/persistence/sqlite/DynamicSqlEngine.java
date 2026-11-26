@@ -1,6 +1,6 @@
 package com.sie.lowcode.infrastructure.persistence.sqlite;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.sie.lowcode.domain.metamodel.model.IndexDef;
 import com.sie.lowcode.domain.metamodel.model.ModelSnapshot;
 import com.sie.lowcode.domain.metamodel.model.PropertyDef;

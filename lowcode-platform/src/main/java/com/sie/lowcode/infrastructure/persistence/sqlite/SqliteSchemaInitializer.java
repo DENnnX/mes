@@ -3,7 +3,7 @@ package com.sie.lowcode.infrastructure.persistence.sqlite;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-import javax.annotation.PostConstruct;
+import jakarta.annotation.PostConstruct;
 
 /**
  * 平台内核元数据与治理表初始化器（纯平台底座表结构，不含任何特定业务示例数据）。

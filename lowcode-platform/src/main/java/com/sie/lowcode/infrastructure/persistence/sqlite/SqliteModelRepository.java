@@ -1,6 +1,6 @@
 package com.sie.lowcode.infrastructure.persistence.sqlite;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.sie.lowcode.domain.metamodel.model.*;
 import com.sie.lowcode.domain.metamodel.repository.ModelRepository;
 import org.springframework.jdbc.core.JdbcTemplate;

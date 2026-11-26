@@ -1,13 +1,19 @@
 package com.sie.lowcode;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureRestTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.http.*;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.client.RestTestClient;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.nio.file.*;
@@ -21,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Groovy 脚本扩展与事务回滚、声明式状态机、版本影响检查/兼容退役/回滚、RBAC 与受控安全清理治理。
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@AutoConfigureRestTestClient
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class LowCodePlatformIntegrationTests {
 
@@ -34,7 +41,7 @@ public class LowCodePlatformIntegrationTests {
     }
 
     @Autowired
-    private TestRestTemplate restTemplate;
+    private RestTestClient restClient;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -69,18 +76,17 @@ public class LowCodePlatformIntegrationTests {
         payload.put("method", "service");
         payload.put("params", params);
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        if (token != null) {
-            headers.set("Authorization", "Bearer " + token);
-        }
-
-        ResponseEntity<Map> resp = restTemplate.postForEntity(
-                endpoint,
-                new HttpEntity<>(payload, headers),
-                Map.class);
-        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
-        return (Map<String, Object>) resp.getBody();
+        return (Map<String, Object>) restClient.post().uri(endpoint)
+                .contentType(MediaType.APPLICATION_JSON)
+                .headers(headers -> {
+                    if (token != null) {
+                        headers.setBearerAuth(token);
+                    }
+                })
+                .body(payload)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(Map.class).returnResult().getResponseBody();
     }
 
     @SuppressWarnings("unchecked")
@@ -104,9 +110,9 @@ public class LowCodePlatformIntegrationTests {
     @Test
     @Order(1)
     void testHealthAuthAndPureBootstrapMenus() {
-        ResponseEntity<Map> health = restTemplate.getForEntity("/api/health", Map.class);
-        assertThat(health.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(health.getBody()).containsEntry("status", "UP");
+        restClient.get().uri("/api/health").exchange()
+                .expectStatus().isOk()
+                .expectBody(Map.class).value(body -> assertThat(body).containsEntry("status", "UP"));
 
         // 未携带 Token 访问受保护端点 -> -32001
         Map<String, Object> unauth = rpcCall(null, "ui_menu", "loadMenu", null);
@@ -513,22 +519,23 @@ public class LowCodePlatformIntegrationTests {
             @Override
             public String getFilename() { return "spec-sheet.txt"; }
         });
-        HttpHeaders upHeaders = new HttpHeaders();
-        upHeaders.setContentType(MediaType.MULTIPART_FORM_DATA);
-        upHeaders.set("Authorization", "Bearer " + userToken);
-        ResponseEntity<Map> upResp = restTemplate.postForEntity("/api/files/upload", new HttpEntity<>(multipart, upHeaders), Map.class);
-        assertThat(upResp.getStatusCode()).isEqualTo(HttpStatus.OK);
-        Map<String, Object> fileMeta = upResp.getBody();
+        Map<String, Object> fileMeta = restClient.post().uri("/api/files/upload")
+                .contentType(MediaType.MULTIPART_FORM_DATA)
+                .headers(headers -> headers.setBearerAuth(userToken))
+                .body(multipart)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(Map.class).returnResult().getResponseBody();
         assertThat(fileMeta).containsEntry("fileName", "spec-sheet.txt");
         uploadedFileUrl = (String) fileMeta.get("downloadUrl");
-        assertThat(restTemplate.getForEntity(uploadedFileUrl, byte[].class).getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-        HttpHeaders downloadHeaders = new HttpHeaders();
-        downloadHeaders.setBearerAuth(userToken);
-        ResponseEntity<byte[]> dlResp = restTemplate.exchange(uploadedFileUrl, HttpMethod.GET,
-                new HttpEntity<>(downloadHeaders), byte[].class);
-        assertThat(dlResp.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(dlResp.getHeaders().getContentDisposition().getType()).isEqualTo("attachment");
-        assertThat(dlResp.getBody()).isEqualTo(sampleBytes);
+        restClient.get().uri(uploadedFileUrl).exchange().expectStatus().isUnauthorized();
+        restClient.get().uri(uploadedFileUrl)
+                .headers(headers -> headers.setBearerAuth(userToken))
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().value(HttpHeaders.CONTENT_DISPOSITION,
+                        value -> assertThat(ContentDisposition.parse(value).getType()).isEqualTo("attachment"))
+                .expectBody(byte[].class).isEqualTo(sampleBytes);
 
         // 3. 发布包含 Dict(多选), CodeRule, related, computeScript, @Validate, selectionMethod, validate钩子与复合索引的模型
         String pkgJson = """
@@ -839,9 +846,13 @@ public class LowCodePlatformIntegrationTests {
         openReq.put("id", "pub-apps-1");
         openReq.put("method", "sys_portal.publicApps");
         openReq.put("params", Map.of());
-        ResponseEntity<Map> openResp = restTemplate.postForEntity("/rpc/open/service", openReq, Map.class);
-        assertThat(openResp.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat((List<Map<String, Object>>) openResp.getBody().get("result"))
+        Map<?, ?> openResp = restClient.post().uri("/rpc/open/service")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(openReq)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(Map.class).returnResult().getResponseBody();
+        assertThat((List<Map<String, Object>>) openResp.get("result"))
                 .extracting(a -> a.get("name")).contains("foundation_qa_app", "ext_qa_app");
 
         // (f) 应用直建 meta_app.save 与用户自助修改密码 rbac_user.changePassword
@@ -1192,10 +1203,10 @@ public class LowCodePlatformIntegrationTests {
                 Map.of("model", "mes_work_order")));
         assertThat((Map<String, Object>) legacyView.get("views"))
                 .containsKey("mes_work_order_execution_grid").doesNotContainKey("mes_work_order_grid");
-        HttpHeaders otherTenantHeaders = new HttpHeaders();
-        otherTenantHeaders.setBearerAuth(operatorToken);
-        assertThat(restTemplate.exchange(uploadedFileUrl, HttpMethod.GET, new HttpEntity<>(otherTenantHeaders), byte[].class)
-                .getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        restClient.get().uri(uploadedFileUrl)
+                .headers(headers -> headers.setBearerAuth(operatorToken))
+                .exchange()
+                .expectStatus().isNotFound();
 
         requireResult(rpcCall(adminToken, "rbac_tenant", "authorizeMenus", Map.of(
                 "tenantId", "mes_execution_tenant", "authorizedMenus", List.of(executionMenu, "mes_operation_execution_menu"))));

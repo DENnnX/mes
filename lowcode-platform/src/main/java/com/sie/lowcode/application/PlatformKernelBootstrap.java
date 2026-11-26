@@ -6,7 +6,10 @@ import com.sie.lowcode.domain.metamodel.repository.ModelRepository;
 import com.sie.lowcode.domain.shared.MetaContext;
 import com.sie.lowcode.infrastructure.container.MetaContainerMemoryRegistry;
 import com.sie.lowcode.domain.uischema.UiSchemaRepository;
+import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.util.*;
 
@@ -18,6 +21,10 @@ import java.util.*;
  */
 @Service
 public class PlatformKernelBootstrap {
+    private static final JsonMapper MODEL_INPUT_MAPPER = JsonMapper.builder()
+            .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+            .build();
+
     private final IamAppService iamAppService;
     private final MetaGovernanceAppService govService;
     private final UiSchemaAppService uiService;
@@ -42,7 +49,7 @@ public class PlatformKernelBootstrap {
         this.foundationRepo = foundationRepo;
     }
 
-    @javax.annotation.PostConstruct
+    @PostConstruct
     public void bootstrap() {
         registry.reloadAll();
         seedIamRolesAndUsers();
@@ -306,9 +313,8 @@ public class PlatformKernelBootstrap {
         // 应用包治理服务
         ext.registerOverride("meta_app", "list", "kernel", (rs, args) -> govService.listApps());
         ext.registerOverride("meta_app", "save", "kernel", (rs, args) -> {
-            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             Object raw = args.get("app") != null ? args.get("app") : (args.get("values") != null ? args.get("values") : args);
-            AppAggregate appAgg = mapper.convertValue(raw, AppAggregate.class);
+            AppAggregate appAgg = MODEL_INPUT_MAPPER.convertValue(raw, AppAggregate.class);
             return govService.saveApp(appAgg);
         });
         ext.registerOverride("meta_app", "importPackage", "kernel", (rs, args) -> {
@@ -324,8 +330,7 @@ public class PlatformKernelBootstrap {
         ext.registerOverride("meta_model", "listModels", "kernel", (rs, args) -> govService.listModelsSummary());
         ext.registerOverride("meta_model", "detail", "kernel", (rs, args) -> govService.getModelDetail(str(args.get("modelName"))));
         ext.registerOverride("meta_model", "saveDraft", "kernel", (rs, args) -> {
-            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            ModelSnapshot snap = mapper.convertValue(args.get("snapshot") != null ? args.get("snapshot") : args, ModelSnapshot.class);
+            ModelSnapshot snap = MODEL_INPUT_MAPPER.convertValue(args.get("snapshot") != null ? args.get("snapshot") : args, ModelSnapshot.class);
             return govService.saveModelDraft(snap);
         });
         ext.registerOverride("meta_model", "buildDefaultViews", "kernel", (rs, args) ->

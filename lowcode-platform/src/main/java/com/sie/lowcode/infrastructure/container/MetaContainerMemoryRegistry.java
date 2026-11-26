@@ -12,7 +12,7 @@ import com.sie.lowcode.infrastructure.script.GroovyScriptExecutorImpl;
 import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Component;
 
-import javax.annotation.PostConstruct;
+import jakarta.annotation.PostConstruct;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 

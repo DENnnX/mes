@@ -1,7 +1,7 @@
 package com.sie.lowcode.interfaces.rpc.chain;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.sie.lowcode.application.*;
 import com.sie.lowcode.domain.iam.*;
 import com.sie.lowcode.domain.runtime.FilterDsl;
@@ -258,7 +258,7 @@ public class ExecuteMetaRpcHandler implements RpcHandler {
         try {
             Object raw = objectMapper.readValue(filter, Object.class);
             if (raw instanceof List<?> || raw instanceof Map<?, ?>) return FilterDsl.parse(raw);
-        } catch (JsonProcessingException ignored) {
+        } catch (JacksonException ignored) {
             // Report invalid menu configuration without running an unfiltered query.
         }
         throw DomainException.invalidParams("菜单默认筛选必须是 JSON 数组或对象");

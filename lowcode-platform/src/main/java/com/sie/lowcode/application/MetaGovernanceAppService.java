@@ -1,7 +1,7 @@
 package com.sie.lowcode.application;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 import com.sie.lowcode.domain.metamodel.model.*;
 import com.sie.lowcode.domain.metamodel.repository.*;
 import com.sie.lowcode.domain.metamodel.service.*;
