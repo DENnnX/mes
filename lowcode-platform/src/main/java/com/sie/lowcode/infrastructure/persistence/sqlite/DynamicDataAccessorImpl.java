@@ -11,6 +11,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -175,6 +176,12 @@ public class DynamicDataAccessorImpl implements DynamicDataAccessor {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public List<RecordData> create(ModelSnapshot snapshot, List<Map<String, Object>> valuesList) {
+        MetaContext ctx = MetaContext.current();
+        String tenantId = ctx != null ? ctx.getTenantId() : MetaContext.DEFAULT_TENANT;
+        return createRecords(snapshot, valuesList, tenantId);
+    }
+
+    private List<RecordData> createRecords(ModelSnapshot snapshot, List<Map<String, Object>> valuesList, String tenantId) {
         assertConcrete(snapshot);
         if (valuesList == null || valuesList.isEmpty()) {
             throw DomainException.invalidParams("create 至少需要一条记录数据");
@@ -183,7 +190,6 @@ public class DynamicDataAccessorImpl implements DynamicDataAccessor {
         MetaContext ctx = MetaContext.current();
         String now = TS_FMT.format(LocalDateTime.now());
         String uid = ctx != null ? ctx.getUserId() : MetaContext.SUPERUSER;
-        String tenantId = ctx != null ? ctx.getTenantId() : MetaContext.DEFAULT_TENANT;
 
         List<RecordData> createdRecords = new ArrayList<>();
         for (Map<String, Object> rawValues : valuesList) {
@@ -231,7 +237,7 @@ public class DynamicDataAccessorImpl implements DynamicDataAccessor {
                 throw DomainException.invalidParams("唯一性约束冲突或数据完整性校验失败: " + ex.getMostSpecificCause().getMessage());
             }
 
-            processRelationWrites(snapshot, newId, vals);
+            processRelationWrites(snapshot, newId, tenantId, vals);
             createdRecords.add(findById(snapshot, newId, true));
         }
         return createdRecords;
@@ -249,9 +255,8 @@ public class DynamicDataAccessorImpl implements DynamicDataAccessor {
             return 0;
         }
         MetaContext ctx = MetaContext.current();
-        String tenantId = ctx != null ? ctx.getTenantId() : MetaContext.DEFAULT_TENANT;
         Map<String, Object> vals = values != null ? new LinkedHashMap<>(values) : new LinkedHashMap<>();
-        applyDefaultsCodeRulesAndValidate(snapshot, vals, false, tenantId);
+        applyDefaultsCodeRulesAndValidate(snapshot, vals, false, existing.getStr("tenant_id"));
 
         String table = sqlEngine.safeIdent(snapshot.resolvedTableName());
         String uid = ctx != null ? ctx.getUserId() : MetaContext.SUPERUSER;
@@ -286,7 +291,7 @@ public class DynamicDataAccessorImpl implements DynamicDataAccessor {
             throw DomainException.invalidParams("唯一性约束冲突: " + ex.getMostSpecificCause().getMessage());
         }
         if (updated > 0) {
-            processRelationWrites(snapshot, id, vals);
+            processRelationWrites(snapshot, id, existing.getStr("tenant_id"), vals);
         }
         return updated;
     }
@@ -296,15 +301,20 @@ public class DynamicDataAccessorImpl implements DynamicDataAccessor {
     public int delete(ModelSnapshot snapshot, List<String> ids) {
         assertConcrete(snapshot);
         if (ids == null || ids.isEmpty()) return 0;
-        String table = sqlEngine.safeIdent(snapshot.resolvedTableName());
-
         // 先按租户归属确认目标存在权（防止跨租户越权删除）
         FilterDsl scopeCheck = new FilterDsl().in("id", ids);
         List<RecordData> scoped = search(snapshot, scopeCheck, Collections.singletonList("id"), ids.size(), 0, null, false);
         List<String> scopedIds = scoped.stream().map(RecordData::getId).filter(Objects::nonNull).toList();
-        if (scopedIds.isEmpty()) return 0;
+        return deleteRecords(snapshot, scopedIds, new HashSet<>());
+    }
 
-        checkForeignReferencesBeforeDelete(snapshot, scopedIds);
+    private record DeleteTarget(String model, String id) {}
+
+    private int deleteRecords(ModelSnapshot snapshot, List<String> ids, Set<DeleteTarget> visited) {
+        List<String> scopedIds = ids.stream().filter(id -> visited.add(new DeleteTarget(snapshot.getName(), id))).toList();
+        if (scopedIds.isEmpty()) return 0;
+        String table = sqlEngine.safeIdent(snapshot.resolvedTableName());
+        checkForeignReferencesBeforeDelete(snapshot, scopedIds, visited);
 
         // 清理 ManyToMany 中间关联表
         String ph = String.join(",", Collections.nCopies(scopedIds.size(), "?"));
@@ -431,6 +441,7 @@ public class DynamicDataAccessorImpl implements DynamicDataAccessor {
 
         for (PropertyDef p : snapshot.getProperties()) {
             if (p.isOneToMany() || p.isManyToMany()) continue;
+            if (!isCreate && (!vals.containsKey(p.getName()) || p.isReadonly())) continue;
             Object val = vals.get(p.getName());
             if (isCreate && (val == null || "".equals(val.toString().trim()))) {
                 if (p.getCodeRule() != null && !p.getCodeRule().isBlank() && codeGenerator != null) {
@@ -444,12 +455,20 @@ public class DynamicDataAccessorImpl implements DynamicDataAccessor {
                     if (val != null) vals.put(p.getName(), val);
                 }
             }
-            if (isCreate && p.isRequired() && (val == null || "".equals(val.toString().trim()))) {
+            if (p.isManyToOne() && vals.containsKey(p.getName())) {
+                val = sqlEngine.normalizeValue(val, p);
+                if (val instanceof String && ((String) val).isBlank()) val = null;
+                vals.put(p.getName(), val);
+            }
+            if (p.isRequired() && (val == null || "".equals(val.toString().trim()))) {
                 errors.add("字段 [" + p.getDisplayName() + " (" + p.getName() + ")] 为必填项");
                 continue;
             }
             if (val != null && !"".equals(val.toString().trim())) {
                 validateValueAgainstProperty(p, val, errors);
+                if (p.isManyToOne() && !referenceExists(p, val, tenantId)) {
+                    errors.add("字段 [" + p.getDisplayName() + "] 必须关联同一租户内存在的记录");
+                }
             }
         }
         if (!errors.isEmpty()) {
@@ -461,13 +480,18 @@ public class DynamicDataAccessorImpl implements DynamicDataAccessor {
         String dt = p.getDataType() != null ? p.getDataType().toLowerCase() : "string";
         if ("integer".equals(dt) || "long".equals(dt) || "double".equals(dt) || "bigdecimal".equals(dt) || "decimal".equals(dt)) {
             try {
+                if ("integer".equals(dt)) new BigDecimal(val.toString()).intValueExact();
+                if ("long".equals(dt)) new BigDecimal(val.toString()).longValueExact();
                 double num = (val instanceof Number) ? ((Number) val).doubleValue() : Double.parseDouble(val.toString());
+                if (!Double.isFinite(num)) throw new NumberFormatException("non-finite");
                 if (p.getMinValue() != null && num < p.getMinValue()) {
                     errors.add("字段 [" + p.getDisplayName() + "] 不能小于 " + p.getMinValue());
                 }
                 if (p.getMaxValue() != null && num > p.getMaxValue()) {
                     errors.add("字段 [" + p.getDisplayName() + "] 不能大于 " + p.getMaxValue());
                 }
+            } catch (ArithmeticException ex) {
+                errors.add("字段 [" + p.getDisplayName() + "] 必须是合法范围内的整数");
             } catch (NumberFormatException ex) {
                 errors.add("字段 [" + p.getDisplayName() + "] 必须是合法数值");
             }
@@ -752,7 +776,7 @@ public class DynamicDataAccessorImpl implements DynamicDataAccessor {
     }
 
     @SuppressWarnings("unchecked")
-    private void processRelationWrites(ModelSnapshot snapshot, String parentId, Map<String, Object> vals) {
+    private void processRelationWrites(ModelSnapshot snapshot, String parentId, String tenantId, Map<String, Object> vals) {
         if (modelLookup == null) return;
 
         // OneToMany 命令三元组: [0,0,vals] | [1,id,vals] | [2,id]
@@ -771,7 +795,7 @@ public class DynamicDataAccessorImpl implements DynamicDataAccessor {
                     if (op == 0 && cmd.size() >= 3 && cmd.get(2) instanceof Map) {
                         Map<String, Object> cv = new LinkedHashMap<>((Map<String, Object>) cmd.get(2));
                         cv.put(prop.getInverseName(), parentId);
-                        create(childSnap, Collections.singletonList(cv));
+                        createRecords(childSnap, Collections.singletonList(cv), tenantId);
                     } else if (op == 1 && cmd.size() >= 3 && cmd.get(2) instanceof Map) {
                         Map<String, Object> cv = new LinkedHashMap<>((Map<String, Object>) cmd.get(2));
                         cv.put(prop.getInverseName(), parentId);
@@ -785,9 +809,9 @@ public class DynamicDataAccessorImpl implements DynamicDataAccessor {
                     if (cv.get("id") != null && !cv.get("id").toString().isBlank()) {
                         String cid = cv.get("id").toString();
                         if (findById(childSnap, cid, false) != null) update(childSnap, cid, cv, null);
-                        else create(childSnap, Collections.singletonList(cv));
+                        else createRecords(childSnap, Collections.singletonList(cv), tenantId);
                     } else {
-                        create(childSnap, Collections.singletonList(cv));
+                        createRecords(childSnap, Collections.singletonList(cv), tenantId);
                     }
                 }
             }
@@ -842,31 +866,47 @@ public class DynamicDataAccessorImpl implements DynamicDataAccessor {
                 UUID.randomUUID().toString(), leftId, rightId);
     }
 
-    private void checkForeignReferencesBeforeDelete(ModelSnapshot targetSnapshot, List<String> ids) {
+    private boolean referenceExists(PropertyDef property, Object id, String tenantId) {
+        ModelSnapshot target = modelLookup == null || property.getRelateModel() == null
+                ? null : modelLookup.apply(property.getRelateModel());
+        if (target == null || target.isAbstractModel() || target.isExtensionPackage()) return false;
+        String table = sqlEngine.safeIdent(target.resolvedTableName());
+        Long count = jdbcTemplate.queryForObject("SELECT count(*) FROM " + table + " WHERE id = ? AND tenant_id = ?"
+                + (target.isLogicDelete() ? " AND coalesce(delete_flag, 0) = 0" : ""), Long.class, id, tenantId);
+        return count != null && count > 0;
+    }
+
+    private void checkForeignReferencesBeforeDelete(ModelSnapshot targetSnapshot, List<String> ids, Set<DeleteTarget> visited) {
         if (modelLookup == null) return;
+        String targetTable = sqlEngine.safeIdent(targetSnapshot.resolvedTableName());
+        String ph = String.join(",", Collections.nCopies(ids.size(), "?"));
         List<Map<String, Object>> modelNames = jdbcTemplate.queryForList("SELECT name FROM meta_model WHERE lifecycle_state != 'PURGED'");
         for (Map<String, Object> mRow : modelNames) {
             String otherName = String.valueOf(mRow.get("name"));
             ModelSnapshot other = modelLookup.apply(otherName);
-            if (other == null || other.isAbstractModel()) continue;
+            if (other == null || other.isAbstractModel() || other.isExtensionPackage()) continue;
             for (PropertyDef prop : other.getProperties()) {
                 if (prop.isManyToOne() && targetSnapshot.getName().equals(prop.getRelateModel())) {
                     String otherTable = sqlEngine.safeIdent(other.resolvedTableName());
                     String col = sqlEngine.safeIdent(prop.resolvedColumnName());
-                    String ph = String.join(",", Collections.nCopies(ids.size(), "?"));
-                    Long cnt = jdbcTemplate.queryForObject(
-                            "SELECT count(*) FROM " + otherTable + " WHERE " + col + " IN (" + ph + ")"
-                                    + (other.isLogicDelete() ? " AND (delete_flag IS NULL OR delete_flag = 0)" : ""),
-                            Long.class, ids.toArray());
-                    if (cnt != null && cnt > 0) {
-                        if ("CASCADE".equalsIgnoreCase(prop.getOnDelete())) {
-                            jdbcTemplate.update("DELETE FROM " + otherTable + " WHERE " + col + " IN (" + ph + ")", ids.toArray());
-                        } else if ("SET_NULL".equalsIgnoreCase(prop.getOnDelete())) {
-                            jdbcTemplate.update("UPDATE " + otherTable + " SET " + col + " = NULL WHERE " + col + " IN (" + ph + ")", ids.toArray());
-                        } else {
-                            throw DomainException.stateGuardFailed(
-                                    "删除受阻：目标记录已被 [" + other.getDisplayName() + "." + prop.getDisplayName() + "] 的 " + cnt + " 条记录引用");
-                        }
+                    List<String> related = jdbcTemplate.queryForList(
+                            "SELECT child.id FROM " + otherTable + " child JOIN " + targetTable + " parent"
+                                    + " ON child." + col + " = parent.id AND child.tenant_id = parent.tenant_id"
+                                    + " WHERE parent.id IN (" + ph + ")"
+                                    + (other.isLogicDelete() ? " AND coalesce(child.delete_flag, 0) = 0" : ""),
+                            String.class, ids.toArray()).stream()
+                            .filter(id -> !visited.contains(new DeleteTarget(otherName, id))).toList();
+                    if (related.isEmpty()) continue;
+                    if ("CASCADE".equalsIgnoreCase(prop.getOnDelete())) {
+                        deleteRecords(other, related, visited);
+                    } else if ("SET_NULL".equalsIgnoreCase(prop.getOnDelete()) && !prop.isRequired()) {
+                        String relatedPh = String.join(",", Collections.nCopies(related.size(), "?"));
+                        jdbcTemplate.update("UPDATE " + otherTable + " SET " + col + " = NULL, version = version + 1"
+                                + " WHERE id IN (" + relatedPh + ")", related.toArray());
+                    } else {
+                        throw DomainException.stateGuardFailed(
+                                "删除受阻：目标记录已被 [" + other.getDisplayName() + "." + prop.getDisplayName() + "] 的 "
+                                        + related.size() + " 条记录引用");
                     }
                 }
             }

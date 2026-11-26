@@ -69,6 +69,18 @@ public class RecordSet {
     }
 
     private static final ThreadLocal<Map<String, Integer>> SUPER_DEPTH = ThreadLocal.withInitial(HashMap::new);
+    private boolean serviceWrite;
+
+    /** Trusted model services can update workflow fields while still running write validation. */
+    public Object updateFromService(Map<String, Object> args) {
+        boolean previous = serviceWrite;
+        serviceWrite = true;
+        try {
+            return call("update", args);
+        } finally {
+            serviceWrite = previous;
+        }
+    }
 
     public Object callSuper(String serviceName, Map<String, Object> args) {
         Map<String, Object> safeArgs = args != null ? args : Collections.emptyMap();
@@ -135,6 +147,7 @@ public class RecordSet {
     }
 
     private ModelSnapshot resolveEffectiveSnapshot(Map<String, Object> args) {
+        if (activeSnapshot.isUseActiveVersionForRecords()) return activeSnapshot;
         String recordId = extractSingleId(args);
         if (recordId != null) {
             RecordData existing = dataAccessor.findById(activeSnapshot, recordId, false);
@@ -206,12 +219,9 @@ public class RecordSet {
             }
             case "create": {
                 List<Map<String, Object>> valuesList = extractValuesList(args);
-                if (snap.getService("validate") != null && !Boolean.TRUE.equals(args.get("_skipValidate"))) {
+                if (!Boolean.TRUE.equals(args.get("_skipValidate"))) {
                     for (Map<String, Object> vals : valuesList) {
-                        Map<String, Object> vArgs = new LinkedHashMap<>();
-                        vArgs.put("values", vals);
-                        vArgs.put("create", true);
-                        call("validate", vArgs);
+                        validateWrite(snap, null, vals);
                     }
                 }
                 List<RecordData> created = dataAccessor.create(snap, valuesList);
@@ -223,12 +233,8 @@ public class RecordSet {
                     throw DomainException.invalidParams("update 服务必须提供 id 参数");
                 }
                 Map<String, Object> values = extractSingleValues(args);
-                if (snap.getService("validate") != null && !Boolean.TRUE.equals(args.get("_skipValidate"))) {
-                    Map<String, Object> vArgs = new LinkedHashMap<>();
-                    vArgs.put("id", id);
-                    vArgs.put("values", values);
-                    vArgs.put("create", false);
-                    call("validate", vArgs);
+                if (!Boolean.TRUE.equals(args.get("_skipValidate"))) {
+                    validateWrite(snap, id, values);
                 }
                 Integer expectedVersion = null;
                 if (args.get("version") instanceof Number) {
@@ -246,6 +252,10 @@ public class RecordSet {
                 List<String> targetIds = extractIdList(args);
                 if (targetIds.isEmpty()) {
                     throw DomainException.invalidParams("delete 服务必须提供 id 或 ids 参数");
+                }
+                for (String id : targetIds) {
+                    ModelSnapshot boundSnapshot = resolveEffectiveSnapshot(Map.of("id", id));
+                    validateOperation(boundSnapshot, "validateDelete", Map.of("id", id));
                 }
                 int deleted = dataAccessor.delete(snap, targetIds);
                 return Map.of("deletedCount", deleted, "ids", targetIds);
@@ -267,6 +277,26 @@ public class RecordSet {
             }
             default:
                 throw DomainException.methodNotFound("模型 [" + getModelName() + "] 未注册服务: " + serviceName);
+        }
+    }
+
+    private void validateWrite(ModelSnapshot boundSnapshot, String id, Map<String, Object> values) {
+        Map<String, Object> args = new LinkedHashMap<>();
+        if (id != null) args.put("id", id);
+        args.put("values", values);
+        args.put("create", id == null);
+        args.put("serviceWrite", serviceWrite);
+        validateOperation(boundSnapshot, "validate", args);
+    }
+
+    private void validateOperation(ModelSnapshot boundSnapshot, String name, Map<String, Object> args) {
+        ModelSnapshot validationSnapshot = activeSnapshot.isValidateWritesWithActiveVersion() ? activeSnapshot : boundSnapshot;
+        ServiceDef validator = validationSnapshot.getService(name);
+        if (validator == null) return;
+        if (validationSnapshot == boundSnapshot) {
+            call(name, args);
+        } else {
+            scriptExecutor.execute(this, validator, args);
         }
     }
 
