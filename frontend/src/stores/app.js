@@ -27,6 +27,7 @@ export const useAppStore = defineStore('app', () => {
   const activeTabId = ref('');
 
   const menuTree = ref([]);
+  const menuLoaded = ref(false);
   const appsList = ref([]);
   const modelsSummary = ref([]);
   const publishTimeline = ref([]);
@@ -67,16 +68,20 @@ export const useAppStore = defineStore('app', () => {
   const businessModels = computed(() => modelsSummary.value.filter((m) => !m.kernelModel));
   const kernelModels = computed(() => modelsSummary.value.filter((m) => m.kernelModel));
   const pendingPurgeCount = computed(() => purgeApplies.value.filter((a) => a.status === 'PENDING').length);
-  const runtimeLeafMenusCount = computed(() => {
-    let c = 0;
-    const walk = (nodes) => {
-      for (const n of nodes || []) {
-        if (n.model) c++;
-        if (n.children) walk(n.children);
+  const runtimeLeafMenusCount = computed(() =>
+    runtimeNavigation.value.filter(({ node }) => !!node.routePath || !!node.model).length
+  );
+
+  const runtimeNavigation = computed(() => {
+    const entries = [];
+    function visit(nodes, depth = 0) {
+      for (const node of nodes || []) {
+        entries.push({ node, depth });
+        visit(node.children || [], depth + 1);
       }
-    };
-    walk(menuTree.value);
-    return c;
+    }
+    visit(menuTree.value, 0);
+    return entries;
   });
 
   const assignableApps = computed(() =>
@@ -93,10 +98,10 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  function ensureTab(id, title, mode, key, viewCsv = '') {
+  function ensureTab(id, title, mode, key) {
     const idx = openTabs.value.findIndex((x) => x.id === id);
     if (idx === -1) {
-      openTabs.value.push({ id, title, mode, key, viewCsv });
+      openTabs.value.push({ id, title, mode, key });
     } else {
       openTabs.value[idx].title = title;
     }
@@ -161,11 +166,29 @@ export const useAppStore = defineStore('app', () => {
     return null;
   }
 
+  function findFirstLeafMenu(targetApp = null) {
+    return (
+      runtimeNavigation.value.find(
+        ({ node }) => node.routePath && (!targetApp || node.appName === targetApp)
+      )?.node || null
+    );
+  }
+
+  function findMenuNode(menuName, routePath = '') {
+    return (
+      runtimeNavigation.value.find(
+        ({ node }) => (routePath && node.routePath === routePath) || (menuName && node.name === menuName)
+      )?.node || null
+    );
+  }
+
   async function loadMenuTree() {
     try {
       menuTree.value = (await rpcCall('ui_menu', 'loadMenu', {})) || [];
     } catch {
       menuTree.value = [];
+    } finally {
+      menuLoaded.value = true;
     }
   }
 
@@ -258,6 +281,7 @@ export const useAppStore = defineStore('app', () => {
     openTabs.value = [];
     activeTabId.value = '';
     menuTree.value = [];
+    menuLoaded.value = false;
     appsList.value = [];
     modelsSummary.value = [];
     publishTimeline.value = [];
@@ -272,6 +296,8 @@ export const useAppStore = defineStore('app', () => {
     openTabs,
     activeTabId,
     menuTree,
+    menuLoaded,
+    runtimeNavigation,
     appsList,
     modelsSummary,
     publishTimeline,
@@ -302,6 +328,8 @@ export const useAppStore = defineStore('app', () => {
     getTenantsForApp,
     getMenusForApp,
     findFirstLeafModel,
+    findFirstLeafMenu,
+    findMenuNode,
     loadMenuTree,
     loadPublishTimeline,
     loadStudioOverview,

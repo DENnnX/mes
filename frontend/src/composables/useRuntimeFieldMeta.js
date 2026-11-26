@@ -1,6 +1,44 @@
+import { computed } from 'vue';
+
 export function useRuntimeFieldMeta(viewDataRefOrGetter) {
   const getViewData = () =>
     typeof viewDataRefOrGetter === 'function' ? viewDataRefOrGetter() : viewDataRefOrGetter;
+
+  const formColumns = computed(() => getViewData()?.views?.form?.body?.columns || []);
+  const formTabs = computed(() => getViewData()?.views?.form?.body?.tabs || []);
+
+  const runtimeFormGroups = computed(() => {
+    const columns = new Map(formColumns.value.map((col) => [col.name, col]));
+    const groups = [];
+    const configuration = getViewData()?.views?.form?.body?.groupConf;
+    if (Array.isArray(configuration)) {
+      for (const [index, group] of configuration.entries()) {
+        if (!Array.isArray(group?.columns)) continue;
+        const members = [];
+        for (const name of group.columns) {
+          if (columns.has(name)) {
+            members.push(columns.get(name));
+            columns.delete(name);
+          }
+        }
+        if (members.length) {
+          groups.push({ key: index, title: group.title || '', columns: members });
+        }
+      }
+    }
+    if (columns.size) {
+      groups.push({ key: 'remaining', title: groups.length ? '其他信息' : '', columns: [...columns.values()] });
+    }
+    return groups;
+  });
+
+  const runtimeEditableGroups = computed(() =>
+    runtimeFormGroups.value
+      .map((group) => ({ ...group, columns: group.columns.filter((col) => !col.detailOnly) }))
+      .filter((group) => group.columns.length > 0)
+  );
+
+  const runtimeEditableTabs = computed(() => formTabs.value.filter((tab) => !tab.body?.readonly));
 
   function getFieldMeta(name) {
     return getViewData()?.fields?.[name] || null;
@@ -70,6 +108,11 @@ export function useRuntimeFieldMeta(viewDataRefOrGetter) {
   }
 
   return {
+    formColumns,
+    formTabs,
+    runtimeFormGroups,
+    runtimeEditableGroups,
+    runtimeEditableTabs,
     getFieldMeta,
     getFieldDataType,
     isFieldSelectionOrDict,

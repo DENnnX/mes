@@ -5,7 +5,7 @@
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
         <div>
           <h2 style="margin:0;font-size:17px;color:#0f172a;">
-            {{ viewData.modelMeta?.displayName || activeModel }}
+            {{ pageTitle }}
             <el-tag size="small" type="success" style="margin-left:8px;">v{{ viewData.modelMeta?.versionNo }}</el-tag>
             <el-tag v-if="viewData.auth?.create" size="small" effect="plain" style="margin-left:6px;">可录入</el-tag>
             <el-tag v-if="viewData.auth?.update" size="small" effect="plain" style="margin-left:4px;">可修改</el-tag>
@@ -37,7 +37,12 @@
     <!-- 搜索区 -->
     <div v-if="viewData.modelMeta && runtimeSearchColumns.length > 0" class="lc-card">
       <div class="lc-search-grid">
-        <div v-for="col in runtimeSearchColumns" :key="col.name" class="lc-search-item">
+        <div
+          v-for="col in runtimeSearchColumns"
+          :key="col.name"
+          class="lc-search-item"
+          :class="{ 'lc-search-range': isFieldDate(col.name) }"
+        >
           <div class="lc-search-label">{{ col.displayName || getFieldMeta(col.name)?.displayName || col.name }}</div>
           <template v-if="isFieldSelectionOrDict(col.name)">
             <el-select v-model="searchValues[col.name]" clearable size="small" style="width:100%;" placeholder="全部">
@@ -64,6 +69,21 @@
             >
               <el-option v-for="opt in (lookupOptionsMap[col.name] || [])" :key="opt.value" :label="opt.label" :value="opt.value" />
             </el-select>
+          </template>
+          <template v-else-if="isFieldDate(col.name)">
+            <el-date-picker
+              v-model="searchValues[col.name]"
+              :type="getFieldDataType(col.name) === 'datetime' ? 'datetimerange' : 'daterange'"
+              :value-format="getFieldDataType(col.name) === 'datetime' ? 'YYYY-MM-DD HH:mm:ss' : 'YYYY-MM-DD'"
+              range-separator="至"
+              start-placeholder="开始"
+              end-placeholder="结束"
+              size="small"
+              style="width:100%;"
+            />
+          </template>
+          <template v-else-if="isFieldNumber(col.name)">
+            <el-input-number v-model="searchValues[col.name]" size="small" style="width:100%;" />
           </template>
           <template v-else>
             <el-input v-model="searchValues[col.name]" clearable size="small" :placeholder="'输入' + (col.displayName || col.name)" @keyup.enter="executeSearch(0)" />
@@ -116,9 +136,9 @@
             </template>
             <template v-else-if="isFieldManyToOne(col.name)"><span>{{ formatM2oCell(row[col.name]) }}</span></template>
             <template v-else-if="isFieldFile(col.name)">
-              <a v-if="parseFileCell(row[col.name])" :href="parseFileCell(row[col.name]).downloadUrl" target="_blank" style="color:var(--primary);text-decoration:underline;">
+              <el-button v-if="parseFileCell(row[col.name])" link type="primary" @click="handleDownloadFile(row[col.name])">
                 {{ parseFileCell(row[col.name]).fileName }}
-              </a>
+              </el-button>
               <span v-else>-</span>
             </template>
             <template v-else><span>{{ formatCellValue(row[col.name]) }}</span></template>
@@ -192,12 +212,19 @@
 
     <!-- 自定义服务参数表单弹窗 -->
     <el-dialog v-model="serviceParamsModal.visible" :title="serviceParamsModal.title" width="450px" destroy-on-close>
-      <el-form label-width="105px" size="small">
+      <el-form label-width="105px" size="small" @submit.prevent>
         <el-form-item v-for="pf in serviceParamsModal.schema" :key="pf.name" :label="pf.displayName || pf.name" :required="pf.required">
           <el-select v-if="pf.dataType === 'Selection' && pf.values" v-model="serviceParamsModal.values[pf.name]" style="width:100%;">
             <el-option v-for="o in pf.values" :key="o.value" :label="o.label" :value="o.value" />
           </el-select>
-          <el-input-number v-else-if="pf.dataType === 'Integer' || pf.dataType === 'Double'" v-model="serviceParamsModal.values[pf.name]" style="width:100%;" />
+          <el-input-number
+            v-else-if="pf.dataType === 'Integer' || pf.dataType === 'Double'"
+            v-model="serviceParamsModal.values[pf.name]"
+            :min="pf.minValue ?? -Infinity"
+            :max="pf.maxValue ?? Infinity"
+            :precision="pf.dataType === 'Integer' ? 0 : undefined"
+            style="width:100%;"
+          />
           <el-input v-else v-model="serviceParamsModal.values[pf.name]" :type="pf.dataType === 'Text' ? 'textarea' : 'text'" />
         </el-form-item>
       </el-form>
@@ -211,21 +238,21 @@
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { rpcCall } from '@/api/rpc';
+import { rpcCall, downloadFile } from '@/api/rpc';
 import { useAuthStore } from '@/stores/auth';
 import { useAppStore } from '@/stores/app';
 import { useRuntimeFieldMeta } from '@/composables/useRuntimeFieldMeta';
-import { formatM2oCell, parseFileCell, formatCellValue, mapButtonType } from '@/utils/formatters';
+import { formatM2oCell, parseFileCell, formatCellValue, mapButtonType, evalEnableCondition } from '@/utils/formatters';
 import RecordDetailDrawer from '@/components/runtime/RecordDetailDrawer.vue';
 import RecordFormModal from '@/components/runtime/RecordFormModal.vue';
 
 const route = useRoute();
+const router = useRouter();
 const authStore = useAuthStore();
 const appStore = useAppStore();
 
-const activeModel = computed(() => String(route.params.model || ''));
 const loading = ref(false);
 const displayMode = ref('table');
 const visibleGridColumnNames = ref([]);
@@ -239,6 +266,23 @@ const viewData = reactive({
   services: [],
   auth: {}
 });
+
+let runtimeRevision = 0;
+
+const activeMenu = computed(() =>
+  route.name === 'runtime-menu' ? decodeURIComponent(String(route.params.menuName || '')) : ''
+);
+const matchedMenuNode = computed(() =>
+  activeMenu.value ? appStore.findMenuNode(activeMenu.value, route.path) : null
+);
+const activeModel = computed(
+  () =>
+    matchedMenuNode.value?.model
+    || (route.name === 'runtime-model' ? decodeURIComponent(String(route.params.model || '')) : viewData.modelMeta?.name || '')
+);
+const pageTitle = computed(
+  () => matchedMenuNode.value?.displayName || viewData.modelMeta?.displayName || activeModel.value
+);
 
 const searchValues = reactive({});
 const gridRows = ref([]);
@@ -267,7 +311,9 @@ const {
   getFieldDataType,
   isFieldSelectionOrDict,
   isFieldBoolean,
+  isFieldNumber,
   isFieldManyToOne,
+  isFieldDate,
   isFieldFile,
   getFieldOptions,
   getOptionTagLabel,
@@ -276,36 +322,45 @@ const {
 
 function isButtonPermitted(btn) {
   const auth = viewData.auth || {};
+  if (btn.service && btn.model && btn.model !== activeModel.value) {
+    return auth.targetServices?.[btn.model]?.[btn.service] === true;
+  }
   if (btn.action === 'create') return auth.create !== false;
   if (btn.action === 'edit') return auth.update !== false;
   if (btn.action === 'delete') return auth.delete !== false;
   if (btn.action === 'preview') return auth.read !== false;
   if (btn.service && auth.services) {
-    const key = btn.auth || btn.service;
-    if (auth.services[key] === false || auth.services[btn.service] === false) return false;
+    return (auth.services[btn.service] ?? auth.services[btn.auth]) !== false;
   }
   return true;
 }
 
 function isRowButtonEnabled(btn, row) {
-  if (!btn.enableCondition) return true;
-  try {
-    return Boolean(new Function('row', 'return Boolean(' + btn.enableCondition + ');')(row));
-  } catch {
-    return true;
-  }
+  return evalEnableCondition(btn.enableCondition, row);
 }
 
 function onSelectionChange(rows) {
   selectedIds.value = (rows || []).map((r) => r.id);
 }
 
-async function fetchLookup(fieldName, keyword) {
+async function fetchLookup(fieldName, keyword, model = activeModel.value, optionsKey = fieldName) {
+  const revision = runtimeRevision;
+  if (!model) return;
   try {
-    lookupOptionsMap[fieldName] =
-      (await rpcCall(activeModel.value, 'lookup', { field: fieldName, keyword: keyword || '', limit: 30 })) || [];
+    const options = (await rpcCall(model, 'lookup', { field: fieldName, keyword: keyword || '', limit: 30 })) || [];
+    if (revision === runtimeRevision) {
+      lookupOptionsMap[optionsKey] = options;
+    }
   } catch {
     // ignore
+  }
+}
+
+async function handleDownloadFile(val) {
+  try {
+    await downloadFile(val);
+  } catch (e) {
+    ElMessage.error(e.message);
   }
 }
 
@@ -315,8 +370,15 @@ function buildPolishFilterDsl() {
     const v = searchValues[col.name];
     if (v === undefined || v === null || v === '') continue;
     const dt = getFieldDataType(col.name);
-    if (dt === 'string' || dt === 'text') conds.push([col.name, 'like', String(v)]);
-    else conds.push([col.name, '=', v]);
+    if (isFieldDate(col.name)) {
+      if (Array.isArray(v) && v.length === 2 && v[0] && v[1]) {
+        conds.push([col.name, '>=', v[0]], [col.name, '<=', v[1]]);
+      }
+    } else if (dt === 'string' || dt === 'text') {
+      conds.push([col.name, 'like', String(v)]);
+    } else {
+      conds.push([col.name, '=', v]);
+    }
   }
   if (conds.length === 0) return [];
   if (conds.length === 1) return conds;
@@ -325,18 +387,24 @@ function buildPolishFilterDsl() {
 
 async function executeSearch(offset = 0) {
   if (!viewData.modelMeta) return;
+  const revision = runtimeRevision;
   page.value = Math.floor(offset / pageSize.value) + 1;
   try {
-    const res = await rpcCall(activeModel.value, 'search', {
+    const args = {
       filter: buildPolishFilterDsl(),
       limit: pageSize.value,
       offset,
       useDisplayForModel: true
-    });
+    };
+    if (activeMenu.value) args.menu = activeMenu.value;
+    const res = await rpcCall(activeModel.value, 'search', args);
+    if (revision !== runtimeRevision) return;
     gridRows.value = res.records || [];
     gridTotal.value = res.total || 0;
   } catch (e) {
-    ElMessage.error('查询失败：' + e.message);
+    if (revision === runtimeRevision) {
+      ElMessage.error('查询失败：' + e.message);
+    }
   }
 }
 
@@ -345,11 +413,42 @@ function resetSearch() {
   executeSearch(0);
 }
 
+function resetLocalRuntimeState() {
+  runtimeRevision++;
+  loading.value = false;
+  Object.assign(viewData, {
+    modelMeta: null,
+    views: {},
+    fields: {},
+    dictOptions: {},
+    dynamicOptions: {},
+    services: [],
+    auth: {}
+  });
+  gridRows.value = [];
+  gridTotal.value = 0;
+  selectedIds.value = [];
+  Object.keys(searchValues).forEach((k) => delete searchValues[k]);
+  Object.keys(lookupOptionsMap).forEach((k) => delete lookupOptionsMap[k]);
+  detailDrawer.visible = false;
+  detailDrawer.record = null;
+  formModal.visible = false;
+  serviceParamsModal.visible = false;
+}
+
 async function refreshAll() {
-  if (!activeModel.value) return;
+  const targetModel = activeModel.value;
+  const targetMenu = activeMenu.value;
+  const targetPath = route.path;
+  if (!targetModel && !targetMenu) return;
+
+  const revision = ++runtimeRevision;
   loading.value = true;
   try {
-    const data = await rpcCall('ui_view', 'loadView', { model: activeModel.value, type: '' });
+    const args = { model: targetModel };
+    if (targetMenu) args.menu = targetMenu;
+    const data = await rpcCall('ui_view', 'loadView', args);
+    if (revision !== runtimeRevision) return;
     viewData.modelMeta = data.modelMeta;
     viewData.views = data.views || {};
     viewData.fields = data.fields || {};
@@ -358,17 +457,21 @@ async function refreshAll() {
     viewData.services = data.services || [];
     viewData.auth = data.auth || {};
     visibleGridColumnNames.value = (data.views?.grid?.body?.columns || []).map((c) => c.name);
-    appStore.ensureTab('m:' + activeModel.value, data.modelMeta?.displayName || activeModel.value, 'runtime', activeModel.value);
+    appStore.ensureTab(
+      targetPath,
+      matchedMenuNode.value?.displayName || data.modelMeta?.displayName || targetModel,
+      'runtime',
+      targetPath
+    );
     await executeSearch(0);
   } catch (e) {
-    viewData.modelMeta = null;
-    viewData.views = {};
-    viewData.fields = {};
-    gridRows.value = [];
-    gridTotal.value = 0;
+    if (revision !== runtimeRevision) return;
     ElMessage.error('无法打开页面：' + e.message);
+    await router.replace('/runtime');
   } finally {
-    loading.value = false;
+    if (revision === runtimeRevision) {
+      loading.value = false;
+    }
   }
 }
 
@@ -402,7 +505,7 @@ function exportRuntimeCsv() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = (viewData.modelMeta?.displayName || activeModel.value) + '.csv';
+  a.download = (pageTitle.value || activeModel.value) + '.csv';
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -423,15 +526,33 @@ async function handleServiceUiResult(res, defaultMsg, actionAfter) {
 }
 
 async function executeButtonRpc(btn, row, extraParams) {
+  const revision = runtimeRevision;
+  const targetModel = btn.model || activeModel.value;
   try {
     if (btn.confirm) await ElMessageBox.confirm(btn.confirm, btn.name, { type: 'warning' });
+    if (revision !== runtimeRevision) return;
     const resolvedArgs = {};
-    for (const [k, v] of Object.entries(btn.args || {})) {
-      resolvedArgs[k] = v === '$row.id' ? row.id : v === '$selectedIds' ? selectedIds.value : v;
+    for (const [key, value] of Object.entries(btn.args || {})) {
+      if (value === '$selectedIds') {
+        resolvedArgs[key] = selectedIds.value;
+      } else if (typeof value === 'string' && value.startsWith('$row.')) {
+        const field = value
+          .slice(5)
+          .split('.')
+          .reduce((current, part) => current?.[part], row);
+        if (field == null) {
+          throw new Error('当前记录缺少按钮参数 ' + value);
+        }
+        resolvedArgs[key] = field?.id ?? field;
+      } else {
+        resolvedArgs[key] = value;
+      }
     }
     Object.assign(resolvedArgs, extraParams || {});
-    const res = await rpcCall(activeModel.value, btn.service, resolvedArgs);
-    await handleServiceUiResult(res, '操作 [' + btn.name + '] 成功', btn.actionAfter);
+    const res = await rpcCall(targetModel, btn.service, resolvedArgs);
+    if (revision === runtimeRevision) {
+      await handleServiceUiResult(res, '操作 [' + btn.name + '] 成功', btn.actionAfter);
+    }
   } catch (e) {
     if (e !== 'cancel') ElMessage.error(e.message);
   }
@@ -451,6 +572,13 @@ async function invokeConfiguredButton(btn, row) {
 }
 
 async function confirmServiceParamsRun() {
+  const missing = serviceParamsModal.schema.find(
+    (field) => field.required && String(serviceParamsModal.values[field.name] ?? '').trim() === ''
+  );
+  if (missing) {
+    ElMessage.warning('请填写' + (missing.displayName || missing.name));
+    return;
+  }
   serviceParamsModal.visible = false;
   await executeButtonRpc(serviceParamsModal.btn, serviceParamsModal.row, serviceParamsModal.values);
 }
@@ -518,11 +646,10 @@ async function onFormSaved({ resetPage }) {
 }
 
 watch(
-  activeModel,
-  (m) => {
-    Object.keys(searchValues).forEach((k) => delete searchValues[k]);
-    selectedIds.value = [];
-    if (m) refreshAll();
+  () => route.path,
+  () => {
+    resetLocalRuntimeState();
+    if (activeModel.value || activeMenu.value) refreshAll();
   },
   { immediate: true }
 );

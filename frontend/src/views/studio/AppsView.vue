@@ -214,9 +214,9 @@ async function submitImportPackage() {
 
 async function jumpToAppAndSwitch(appName) {
   await appStore.loadMenuTree();
-  const leaf = appStore.findFirstLeafModel(appStore.menuTree, appName);
-  if (leaf) {
-    await router.push('/m/' + leaf.model);
+  const leaf = appStore.findFirstLeafMenu(appName);
+  if (leaf?.routePath) {
+    await router.push(leaf.routePath);
   } else {
     ElMessage.info('应用 [' + appStore.resolveAppDisplayName(appName) + '] 暂未生成菜单页面，可先在管理中心创建数据表');
   }

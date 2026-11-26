@@ -1,4 +1,5 @@
 import { createRouter, createWebHashHistory } from 'vue-router';
+import { ElMessage } from 'element-plus';
 import { useAuthStore } from '@/stores/auth';
 import { STUDIO_TITLES, useAppStore } from '@/stores/app';
 
@@ -42,6 +43,7 @@ const routes = [
       { path: 'studio/rpc_console', name: 'studio-rpc_console', component: RpcConsoleView, meta: { mode: 'studio', tab: 'rpc_console', requiresStudio: true } },
       { path: 'tenant-admin', name: 'tenant-admin', component: IamManagementView, meta: { mode: 'tenant_admin', tab: 'iam', requiresTenantAdmin: true } },
       { path: 'runtime', name: 'runtime-home', component: RuntimePortalView, meta: { mode: 'runtime' } },
+      { path: 'menu/:menuName', name: 'runtime-menu', component: DynamicModelView, meta: { mode: 'runtime' } },
       { path: 'm/:model', name: 'runtime-model', component: DynamicModelView, meta: { mode: 'runtime' } }
     ]
   },
@@ -69,6 +71,10 @@ router.beforeEach(async (to) => {
     return true;
   }
 
+  if (!appStore.menuLoaded) {
+    await appStore.loadMenuTree();
+  }
+
   if (to.path === '/login' || to.path === '/') {
     return authStore.defaultHomePath();
   }
@@ -79,6 +85,25 @@ router.beforeEach(async (to) => {
 
   if (to.meta.requiresTenantAdmin && !authStore.canManageTenants) {
     return authStore.defaultHomePath();
+  }
+
+  if (to.name === 'runtime-menu') {
+    const menuName = decodeURIComponent(String(to.params.menuName || ''));
+    const menuNode = appStore.findMenuNode(menuName, to.path);
+    if (!menuNode) {
+      ElMessage.warning('页面不存在或未授权');
+      return { path: '/runtime', replace: true };
+    }
+  } else if (to.name === 'runtime-model') {
+    const model = decodeURIComponent(String(to.params.model || ''));
+    const legacy = appStore.runtimeNavigation.find(({ node }) => node.routePath && node.model === model);
+    if (legacy) {
+      return { path: legacy.node.routePath, replace: true };
+    }
+    if (!(authStore.canAccessStudio && /^[a-z][a-z0-9_]*$/.test(model))) {
+      ElMessage.warning('页面不存在或未授权');
+      return { path: '/runtime', replace: true };
+    }
   }
 
   if (to.meta.mode === 'studio') {

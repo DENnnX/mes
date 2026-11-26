@@ -89,7 +89,7 @@ async function handleBuildDefaultViews(modelName) {
 }
 
 function jumpToRuntimeModel(modelName) {
-  router.push('/m/' + modelName);
+  router.push('/m/' + encodeURIComponent(modelName));
 }
 
 onMounted(() => {

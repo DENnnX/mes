@@ -1,3 +1,5 @@
+import { parseFileCell } from '@/utils/formatters';
+
 export async function rpcCall(model, service, args = {}, endpoint = '/rbac_tenant_root/rpc/service', tokenOverride = null) {
   const headers = { 'Content-Type': 'application/json' };
   const token = tokenOverride !== null ? tokenOverride : localStorage.getItem('lc_token');
@@ -47,4 +49,24 @@ export async function uploadFile(file) {
     throw new Error(json.error || '上传失败');
   }
   return json;
+}
+
+export async function downloadFile(value) {
+  const file = parseFileCell(value);
+  if (!file) return;
+  const headers = {};
+  const token = localStorage.getItem('lc_token');
+  if (token) {
+    headers['Authorization'] = 'Bearer ' + token;
+  }
+  const response = await fetch('/api/files/' + encodeURIComponent(file.fileId), { headers });
+  if (!response.ok) {
+    throw new Error('附件不存在、未授权或登录已过期');
+  }
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = file.fileName;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

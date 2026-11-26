@@ -101,6 +101,9 @@
         <el-form-item label="上级菜单"><el-input v-model="menuEditor.form.parentId" /></el-form-item>
         <el-form-item label="打开数据表"><el-input v-model="menuEditor.form.model" /></el-form-item>
         <el-form-item label="使用布局"><el-input v-model="menuEditor.form.view" /></el-form-item>
+        <el-form-item label="默认筛选">
+          <el-input v-model="menuEditor.form.filter" placeholder='可选 JSON 条件，如 [["status","=","DONE"]]' />
+        </el-form-item>
         <el-form-item label="排序号"><el-input-number v-model="menuEditor.form.sequence" /></el-form-item>
         <el-form-item label="启用"><el-switch v-model="menuEditor.form.active" /></el-form-item>
       </el-form>
@@ -136,7 +139,7 @@ const viewEditor = reactive({
 
 const menuEditor = reactive({
   visible: false,
-  form: { name: '', displayName: '', appName: 'custom_app', parentId: '', model: '', view: '', sequence: 10, active: true }
+  form: { name: '', displayName: '', appName: 'custom_app', parentId: '', model: '', view: '', filter: '', sequence: 10, active: true }
 });
 
 async function loadViewsAndMenus() {
@@ -157,7 +160,7 @@ async function buildVisualColumnsForView() {
   const byName = {};
   const ordered = [];
   for (const c of existingCols) {
-    const item = { name: c.name, displayName: c.displayName || c.name, width: c.width || '', sortable: !!c.sortable, enabled: true };
+    const item = { raw: { ...c }, name: c.name, displayName: c.displayName || c.name, width: c.width || '', sortable: !!c.sortable, enabled: true };
     ordered.push(item);
     byName[c.name] = item;
   }
@@ -212,9 +215,10 @@ function applyVisualToJson() {
   const cols = viewEditor.visualColumns
     .filter((c) => c.enabled && c.name.trim())
     .map((c) => {
-      const obj = { name: c.name.trim(), displayName: c.displayName || c.name.trim() };
+      const obj = { ...(c.raw || {}), name: c.name.trim(), displayName: c.displayName || c.name.trim() };
       if (viewEditor.form.type === 'grid') {
         if (c.width) obj.width = c.width;
+        else delete obj.width;
         obj.sortable = !!c.sortable;
       }
       return obj;
@@ -256,7 +260,7 @@ async function saveViewFromDesigner() {
 function openMenuEditor(row) {
   menuEditor.form = row
     ? { ...row }
-    : { name: '', displayName: '', appName: appStore.businessAppsOnly[0]?.name || 'custom_app', parentId: '', model: '', view: '', sequence: 10, active: true };
+    : { name: '', displayName: '', appName: appStore.businessAppsOnly[0]?.name || 'custom_app', parentId: '', model: '', view: '', filter: '', sequence: 10, active: true };
   menuEditor.visible = true;
 }
 

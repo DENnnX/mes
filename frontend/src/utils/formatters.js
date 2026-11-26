@@ -84,11 +84,19 @@ export function parseFileCell(val) {
   if (obj && typeof obj === 'object' && obj.fileId) {
     return {
       ...obj,
-      fileName: obj.fileName || obj.name || obj.fileId,
-      downloadUrl: obj.downloadUrl || obj.url
+      fileName: obj.fileName || obj.name || obj.fileId
     };
   }
   return null;
+}
+
+export function evalEnableCondition(enableCondition, row) {
+  if (!enableCondition) return true;
+  try {
+    return Boolean(new Function('row', 'return Boolean(' + enableCondition + ');')(row));
+  } catch {
+    return true;
+  }
 }
 
 export function formatCellValue(val) {

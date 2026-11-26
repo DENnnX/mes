@@ -130,38 +130,31 @@
         <template v-else>
           <div class="lc-side-section">应用功能导航</div>
           <div class="lc-side-scroll">
-            <div class="lc-nav-item" :class="{ active: !currentRuntimeModel }" @click="router.push('/runtime')">
+            <div class="lc-nav-item" :class="{ active: route.name === 'runtime-home' }" @click="router.push('/runtime')">
               <el-icon><House /></el-icon><span>全部授权应用</span>
             </div>
             <div v-if="appStore.menuTree.length === 0" style="padding: 14px 16px; color: #94a3b8; font-size: 12.5px; line-height: 1.6;">
               当前空间下暂无可用业务页面。请创建并启用应用页面，或联系管理员开通授权。
             </div>
-            <template v-for="group in appStore.menuTree" :key="group.name">
+            <template v-for="{ node, depth } in appStore.runtimeNavigation" :key="node.name">
               <div
-                v-if="group.model"
+                v-if="node.routePath"
                 class="lc-nav-item"
-                :class="{ active: currentRuntimeModel === group.model }"
-                @click="openRuntimeModel(group.model)"
+                :class="{ active: activeRuntimeMenu === node.name }"
+                :style="{ paddingLeft: 14 + depth * 12 + 'px' }"
+                @click="openRuntimeMenu(node)"
               >
                 <el-icon><Document /></el-icon>
-                <span>{{ group.displayName }}</span>
+                <span>{{ node.displayName }}</span>
               </div>
-              <template v-else>
-                <div class="lc-nav-group-title">
-                  <el-icon><FolderOpened /></el-icon>
-                  <span>{{ group.displayName }}</span>
-                </div>
-                <div
-                  v-for="child in (group.children || [])"
-                  :key="child.name"
-                  class="lc-nav-item"
-                  :class="{ active: currentRuntimeModel === child.model }"
-                  @click="openRuntimeModel(child.model)"
-                >
-                  <el-icon><Document /></el-icon>
-                  <span>{{ child.displayName }}</span>
-                </div>
-              </template>
+              <div
+                v-else
+                class="lc-nav-group-title"
+                :style="{ paddingLeft: 14 + depth * 12 + 'px' }"
+              >
+                <el-icon><FolderOpened /></el-icon>
+                <span>{{ node.displayName }}</span>
+              </div>
             </template>
           </div>
         </template>
@@ -224,17 +217,19 @@ const workspaceModel = computed({
   }
 });
 
-const currentRuntimeModel = computed(() =>
-  route.name === 'runtime-model' ? String(route.params.model || '') : ''
-);
+const activeRuntimeMenu = computed(() => {
+  if (route.name !== 'runtime-menu') return '';
+  const menuName = decodeURIComponent(String(route.params.menuName || ''));
+  return appStore.findMenuNode(menuName, route.path)?.name || menuName;
+});
 
 function switchStudioTab(tab) {
   router.push('/studio/' + tab);
 }
 
-function openRuntimeModel(modelName) {
-  if (!modelName) return;
-  router.push('/m/' + modelName);
+function openRuntimeMenu(menu) {
+  if (!menu?.routePath) return;
+  router.push(menu.routePath);
 }
 
 function activateTab(tab) {
@@ -242,7 +237,7 @@ function activateTab(tab) {
   if (tab.mode === 'studio') {
     router.push('/studio/' + tab.key);
   } else {
-    router.push('/m/' + tab.key);
+    router.push(tab.key);
   }
 }
 
@@ -305,7 +300,9 @@ async function submitChangePassword() {
 }
 
 onMounted(async () => {
-  await appStore.loadMenuTree();
+  if (!appStore.menuLoaded) {
+    await appStore.loadMenuTree();
+  }
   if (authStore.canAccessStudio) {
     await appStore.loadStudioOverview();
   }

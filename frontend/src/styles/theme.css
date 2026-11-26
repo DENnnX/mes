@@ -212,6 +212,9 @@ html, body, #app {
 .lc-stat-value { font-size: 22px; font-weight: 700; color: #0f172a; margin-top: 4px; }
 .lc-search-grid { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; }
 .lc-search-item { min-width: 180px; flex: 0 1 215px; }
+.lc-search-range { flex: 1 1 300px; min-width: 240px; }
+.lc-form-group { margin-bottom: 14px; }
+.lc-form-group summary { cursor: pointer; font-weight: 600; margin-bottom: 10px; }
 .lc-search-label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
 .lc-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 10px; flex-wrap: wrap; }
 .lc-code {

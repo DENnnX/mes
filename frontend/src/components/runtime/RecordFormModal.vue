@@ -1,72 +1,80 @@
 <template>
   <div>
     <el-dialog :model-value="visible" :title="modalTitle" width="800px" destroy-on-close @update:model-value="(val) => emit('update:visible', val)">
-      <el-form label-width="125px" size="small">
-        <el-row :gutter="12">
-          <template v-for="col in formColumns" :key="col.name">
-            <el-col :span="isWideField(col.name) ? 24 : 12">
-              <el-form-item :label="col.displayName || getFieldMeta(col.name)?.displayName || col.name" :required="isFieldRequired(col.name)">
-                <template v-if="isFieldSelectionOrDict(col.name)">
-                  <el-select v-model="formData[col.name]" :multiple="!!getFieldMeta(col.name)?.multiple" :disabled="isFormFieldDisabled(col.name)" style="width:100%;" clearable>
-                    <el-option v-for="opt in getFieldOptions(col.name)" :key="opt.value" :label="opt.label" :value="opt.value" />
-                  </el-select>
-                </template>
-                <template v-else-if="isFieldBoolean(col.name)">
-                  <el-switch v-model="formData[col.name]" :disabled="isFormFieldDisabled(col.name)" />
-                </template>
-                <template v-else-if="isFieldNumber(col.name)">
-                  <el-input-number v-model="formData[col.name]" :disabled="isFormFieldDisabled(col.name)" :min="getFieldMeta(col.name)?.minValue ?? -999999999" :max="getFieldMeta(col.name)?.maxValue ?? 999999999" style="width:100%;" />
-                </template>
-                <template v-else-if="isFieldManyToOne(col.name)">
-                  <el-select
-                    v-model="formData[col.name]"
-                    :disabled="isFormFieldDisabled(col.name)"
-                    filterable
-                    clearable
-                    remote
-                    :remote-method="(kw) => fetchLookup(col.name, kw)"
-                    @visible-change="(vis) => { if (vis) fetchLookup(col.name, ''); }"
-                    style="width:100%;"
-                    placeholder="输入关键字搜索"
-                  >
-                    <el-option v-for="opt in (lookupOptionsMap[col.name] || [])" :key="opt.value" :label="opt.label" :value="opt.value" />
-                  </el-select>
-                </template>
-                <template v-else-if="isFieldDate(col.name)">
-                  <el-date-picker
-                    v-model="formData[col.name]"
-                    :type="getFieldDataType(col.name) === 'datetime' ? 'datetime' : 'date'"
-                    :value-format="getFieldDataType(col.name) === 'datetime' ? 'YYYY-MM-DD HH:mm:ss' : 'YYYY-MM-DD'"
-                    :disabled="isFormFieldDisabled(col.name)"
-                    style="width:100%;"
-                  />
-                </template>
-                <template v-else-if="isFieldFile(col.name)">
-                  <div style="display:flex;align-items:center;gap:8px;width:100%;">
-                    <input type="file" v-if="!isFormFieldDisabled(col.name)" :accept="getFieldMeta(col.name)?.contentType || '*/*'" @change="(ev) => onUploadFile(col.name, ev)" />
-                    <a v-if="parseFileCell(formData[col.name])" :href="parseFileCell(formData[col.name]).downloadUrl" target="_blank" style="font-size:12px;color:var(--primary);">
-                      {{ parseFileCell(formData[col.name]).fileName }}
-                    </a>
-                    <el-button v-if="!isFormFieldDisabled(col.name) && formData[col.name]" link type="danger" size="small" @click="formData[col.name] = null">清除</el-button>
-                  </div>
-                </template>
-                <template v-else-if="getFieldDataType(col.name) === 'text'">
-                  <el-input v-model="formData[col.name]" type="textarea" :rows="3" :disabled="isFormFieldDisabled(col.name)" />
-                </template>
-                <template v-else>
-                  <el-input
-                    v-model="formData[col.name]"
-                    :disabled="isFormFieldDisabled(col.name)"
-                    :placeholder="getFieldMeta(col.name)?.codeRule ? '留空将按编号规则自动生成' : (getFieldMeta(col.name)?.tooltips || '')"
-                  />
-                </template>
-              </el-form-item>
-            </el-col>
-          </template>
-        </el-row>
+      <el-form label-width="125px" size="small" @submit.prevent>
+        <details v-for="group in runtimeEditableGroups" :key="group.key" class="lc-form-group" open>
+          <summary v-show="group.title">{{ group.title }}</summary>
+          <el-row :gutter="12">
+            <template v-for="col in group.columns" :key="col.name">
+              <el-col :span="isWideField(col.name) ? 24 : 12">
+                <el-form-item :label="col.displayName || getFieldMeta(col.name)?.displayName || col.name" :required="isFieldRequired(col.name)">
+                  <template v-if="isFieldSelectionOrDict(col.name)">
+                    <el-select v-model="formData[col.name]" :multiple="!!getFieldMeta(col.name)?.multiple" :disabled="isFormFieldDisabled(col.name)" style="width:100%;" clearable>
+                      <el-option v-for="opt in getFieldOptions(col.name)" :key="opt.value" :label="opt.label" :value="opt.value" />
+                    </el-select>
+                  </template>
+                  <template v-else-if="isFieldBoolean(col.name)">
+                    <el-switch v-model="formData[col.name]" :disabled="isFormFieldDisabled(col.name)" />
+                  </template>
+                  <template v-else-if="isFieldNumber(col.name)">
+                    <el-input-number v-model="formData[col.name]" :disabled="isFormFieldDisabled(col.name)" :min="getFieldMeta(col.name)?.minValue ?? -999999999" :max="getFieldMeta(col.name)?.maxValue ?? 999999999" style="width:100%;" />
+                  </template>
+                  <template v-else-if="isFieldManyToOne(col.name)">
+                    <el-select
+                      v-model="formData[col.name]"
+                      :disabled="isFormFieldDisabled(col.name)"
+                      filterable
+                      clearable
+                      remote
+                      :remote-method="(kw) => fetchLookup(col.name, kw)"
+                      @visible-change="(vis) => { if (vis) fetchLookup(col.name, ''); }"
+                      style="width:100%;"
+                      placeholder="输入关键字搜索"
+                    >
+                      <el-option v-for="opt in (lookupOptionsMap[col.name] || [])" :key="opt.value" :label="opt.label" :value="opt.value" />
+                    </el-select>
+                  </template>
+                  <template v-else-if="isFieldDate(col.name)">
+                    <el-date-picker
+                      v-model="formData[col.name]"
+                      :type="getFieldDataType(col.name) === 'datetime' ? 'datetime' : 'date'"
+                      :value-format="getFieldDataType(col.name) === 'datetime' ? 'YYYY-MM-DD HH:mm:ss' : 'YYYY-MM-DD'"
+                      :disabled="isFormFieldDisabled(col.name)"
+                      style="width:100%;"
+                    />
+                  </template>
+                  <template v-else-if="isFieldFile(col.name)">
+                    <div style="display:flex;align-items:center;gap:8px;width:100%;">
+                      <input type="file" v-if="!isFormFieldDisabled(col.name)" :accept="getFieldMeta(col.name)?.contentType || '*/*'" @change="(ev) => onUploadFile(col.name, ev)" />
+                      <el-button
+                        v-if="parseFileCell(formData[col.name])"
+                        link
+                        type="primary"
+                        @click="handleDownloadFile(formData[col.name])"
+                      >
+                        {{ parseFileCell(formData[col.name]).fileName }}
+                      </el-button>
+                      <el-button v-if="!isFormFieldDisabled(col.name) && formData[col.name]" link type="danger" size="small" @click="formData[col.name] = null">清除</el-button>
+                    </div>
+                  </template>
+                  <template v-else-if="getFieldDataType(col.name) === 'text'">
+                    <el-input v-model="formData[col.name]" type="textarea" :rows="3" :disabled="isFormFieldDisabled(col.name)" />
+                  </template>
+                  <template v-else>
+                    <el-input
+                      v-model="formData[col.name]"
+                      :disabled="isFormFieldDisabled(col.name)"
+                      :placeholder="getFieldMeta(col.name)?.codeRule ? '留空将按编号规则自动生成' : (getFieldMeta(col.name)?.tooltips || '')"
+                    />
+                  </template>
+                </el-form-item>
+              </el-col>
+            </template>
+          </el-row>
+        </details>
 
-        <el-tabs v-if="formTabs.length > 0" style="margin-top:8px;">
-          <el-tab-pane v-for="tab in formTabs" :key="tab.header" :label="tab.header">
+        <el-tabs v-if="runtimeEditableTabs.length > 0" style="margin-top:8px;">
+          <el-tab-pane v-for="tab in runtimeEditableTabs" :key="tab.header" :label="tab.header">
             <template v-if="tab.body?.type === 'manytomany'">
               <div style="margin-bottom:8px;"><el-button size="small" type="primary" plain @click="openAddErDialog(tab)">+ 选择关联项</el-button></div>
               <el-table :data="(m2mRows[tab.body.field] || []).filter(r => r._op !== 'unlink')" border size="small">
@@ -84,13 +92,26 @@
                   <template #default="{ row }">
                     <el-input-number v-if="cc.dataType === 'Integer' || cc.dataType === 'Double' || cc.dataType === 'Decimal'" v-model="row[cc.name]" size="small" controls-position="right" style="width:100%;" @change="markChildDirty(row)" />
                     <el-switch v-else-if="cc.dataType === 'Boolean'" v-model="row[cc.name]" @change="markChildDirty(row)" />
+                    <el-select
+                      v-else-if="cc.dataType === 'ManyToOne'"
+                      v-model="row[cc.name]"
+                      filterable
+                      clearable
+                      remote
+                      :remote-method="(kw) => fetchChildLookup(tab, cc.name, kw)"
+                      @visible-change="(vis) => { if (vis) fetchChildLookup(tab, cc.name, ''); }"
+                      @change="markChildDirty(row)"
+                      style="width:100%;"
+                    >
+                      <el-option v-for="opt in childLookupOptions(tab, cc.name)" :key="opt.value" :label="opt.label" :value="opt.value" />
+                    </el-select>
                     <el-input v-else v-model="row[cc.name]" size="small" @change="markChildDirty(row)" />
                   </template>
                 </el-table-column>
                 <el-table-column label="操作" width="120">
-                  <template #default="{ row, $index }">
+                  <template #default="{ row }">
                     <el-button link type="primary" size="small" @click="openChildEditModal(tab, row)">详情编辑</el-button>
-                    <el-button link type="danger" size="small" @click="removeChildRow(tab, row, $index)">删</el-button>
+                    <el-button link type="danger" size="small" @click="removeChildRow(tab, row)">删</el-button>
                   </template>
                 </el-table-column>
               </el-table>
@@ -124,14 +145,29 @@
 
     <!-- 子表行详情编辑弹窗 -->
     <el-dialog v-model="childEditModal.visible" title="编辑明细行" width="460px" destroy-on-close>
-      <el-form label-width="100px" size="small">
+      <el-form label-width="100px" size="small" @submit.prevent>
         <el-form-item v-for="cc in childEditModal.columns" :key="cc.name" :label="cc.displayName || cc.name">
-          <el-input-number v-if="cc.dataType === 'Integer' || cc.dataType === 'Double' || cc.dataType === 'Decimal'" v-model="childEditModal.row[cc.name]" style="width:100%;" />
-          <el-switch v-else-if="cc.dataType === 'Boolean'" v-model="childEditModal.row[cc.name]" />
-          <el-input v-else v-model="childEditModal.row[cc.name]" />
+          <el-input-number v-if="cc.dataType === 'Integer' || cc.dataType === 'Double' || cc.dataType === 'Decimal'" v-model="childEditModal.draft[cc.name]" style="width:100%;" />
+          <el-switch v-else-if="cc.dataType === 'Boolean'" v-model="childEditModal.draft[cc.name]" />
+          <el-select
+            v-else-if="cc.dataType === 'ManyToOne'"
+            v-model="childEditModal.draft[cc.name]"
+            filterable
+            clearable
+            remote
+            :remote-method="(kw) => fetchChildLookup(childEditModal.tab, cc.name, kw)"
+            @visible-change="(vis) => { if (vis) fetchChildLookup(childEditModal.tab, cc.name, ''); }"
+            style="width:100%;"
+          >
+            <el-option v-for="opt in childLookupOptions(childEditModal.tab, cc.name)" :key="opt.value" :label="opt.label" :value="opt.value" />
+          </el-select>
+          <el-input v-else v-model="childEditModal.draft[cc.name]" />
         </el-form-item>
       </el-form>
-      <template #footer><el-button size="small" type="primary" @click="confirmChildEditModal">完成</el-button></template>
+      <template #footer>
+        <el-button size="small" @click="childEditModal.visible = false">取消</el-button>
+        <el-button size="small" type="primary" @click="confirmChildEditModal">完成</el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -139,7 +175,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
-import { rpcCall, uploadFile } from '@/api/rpc';
+import { rpcCall, uploadFile, downloadFile } from '@/api/rpc';
 import { useRuntimeFieldMeta } from '@/composables/useRuntimeFieldMeta';
 import { parseFileCell } from '@/utils/formatters';
 
@@ -160,15 +196,17 @@ const childRows = ref({});
 const m2mRows = ref({});
 
 const addErModal = reactive({ visible: false, field: '', relateModel: '', keyword: '', candidates: [], selected: [] });
-const childEditModal = reactive({ visible: false, tab: null, row: {}, columns: [] });
+const childEditModal = reactive({ visible: false, tab: null, row: null, draft: {}, columns: [] });
 
-const formColumns = computed(() => props.viewData.views?.form?.body?.columns || []);
-const formTabs = computed(() => props.viewData.views?.form?.body?.tabs || []);
 const modalTitle = computed(
   () => (props.mode === 'create' ? '新增' : '编辑') + ' - ' + (props.viewData.modelMeta?.displayName || props.modelName)
 );
 
 const {
+  formColumns,
+  formTabs,
+  runtimeEditableGroups,
+  runtimeEditableTabs,
   getFieldMeta,
   getFieldDataType,
   isFieldSelectionOrDict,
@@ -193,6 +231,28 @@ function fetchLookup(fieldName, kw) {
   emit('lookup', fieldName, kw);
 }
 
+function childLookupKey(tab, fieldName) {
+  return (tab?.body?.relateModel || '') + ':' + fieldName;
+}
+
+function childLookupOptions(tab, fieldName) {
+  return props.lookupOptionsMap[childLookupKey(tab, fieldName)] || [];
+}
+
+function fetchChildLookup(tab, fieldName, keyword) {
+  const relateModel = tab?.body?.relateModel;
+  if (!relateModel) return;
+  emit('lookup', fieldName, keyword, relateModel, childLookupKey(tab, fieldName));
+}
+
+async function handleDownloadFile(val) {
+  try {
+    await downloadFile(val);
+  } catch (e) {
+    ElMessage.error(e.message);
+  }
+}
+
 async function initCreateForm() {
   let init = {};
   try {
@@ -206,7 +266,7 @@ async function initCreateForm() {
   }
   const cMap = {};
   const mMap = {};
-  for (const tab of formTabs.value) {
+  for (const tab of runtimeEditableTabs.value) {
     if (tab.body?.type === 'manytomany') mMap[tab.body.field] = [];
     else cMap[tab.body.field] = [];
   }
@@ -231,13 +291,27 @@ async function initEditForm() {
     }
     const cMap = {};
     const mMap = {};
-    for (const tab of formTabs.value) {
+    for (const tab of runtimeEditableTabs.value) {
       const fk = tab.body.field;
       const list = Array.isArray(full[fk]) ? full[fk] : [];
       if (tab.body?.type === 'manytomany') {
         mMap[fk] = list.map((c) => ({ id: c.id || c, displayName: c.displayName || String(c), _op: 'keep' }));
       } else {
-        cMap[fk] = list.map((c) => ({ ...c, _op: 'keep' }));
+        cMap[fk] = list.map((child) => {
+          const savedRow = { ...child, _op: 'keep' };
+          for (const col of tab.body.columns || []) {
+            const value = savedRow[col.name];
+            if (col.dataType !== 'ManyToOne' || !value) continue;
+            const id = typeof value === 'object' ? value.id : value;
+            const key = childLookupKey(tab, col.name);
+            const existing = props.lookupOptionsMap[key] || [];
+            if (!existing.some((opt) => opt.value === id)) {
+              props.lookupOptionsMap[key] = [...existing, { value: id, label: value.displayName || id }];
+            }
+            savedRow[col.name] = id;
+          }
+          return savedRow;
+        });
       }
     }
     childRows.value = cMap;
@@ -282,19 +356,26 @@ function markChildDirty(row) {
   if (!row._op || row._op === 'keep') row._op = 'update';
 }
 
-function removeChildRow(tab, row, idx) {
-  if (row.id) row._op = 'delete';
-  else childRows.value[tab.body.field].splice(idx, 1);
+function removeChildRow(tab, row) {
+  if (row.id) {
+    row._op = 'delete';
+  } else {
+    const rows = childRows.value[tab.body.field];
+    const index = rows ? rows.indexOf(row) : -1;
+    if (index !== -1) rows.splice(index, 1);
+  }
 }
 
 function openChildEditModal(tab, row) {
   childEditModal.tab = tab;
   childEditModal.columns = tab.body?.columns || [];
   childEditModal.row = row;
+  childEditModal.draft = { ...row };
   childEditModal.visible = true;
 }
 
 function confirmChildEditModal() {
+  Object.assign(childEditModal.row, childEditModal.draft);
   markChildDirty(childEditModal.row);
   childEditModal.visible = false;
 }
@@ -343,7 +424,13 @@ async function submitForm(keepOpenAndReset = false) {
     for (const fKey of ['id', 'version', 'bound_version_id', 'create_user', 'create_date', 'update_user', 'update_date', 'tenant_id']) {
       delete values[fKey];
     }
+    for (const col of formColumns.value) {
+      if (col.detailOnly) delete values[col.name];
+    }
     for (const tab of formTabs.value) {
+      if (tab.body?.readonly) delete values[tab.body.field];
+    }
+    for (const tab of runtimeEditableTabs.value) {
       const fk = tab.body.field;
       if (tab.body?.type === 'manytomany') {
         const cmds = [];
