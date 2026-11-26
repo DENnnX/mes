@@ -85,6 +85,11 @@ public class ReferenceAnalyzerDomainService {
         return refs;
     }
 
+    public boolean changesPhysicalTable(ModelSnapshot before, ModelSnapshot after) {
+        return !before.isAbstractModel() && !before.isExtensionPackage()
+                && !before.resolvedTableName().equalsIgnoreCase(after.resolvedTableName());
+    }
+
     public ImpactReport analyzeImpact(ModelVersion activeVersion,
                                       ModelVersion candidateVersion,
                                       List<UiViewDef> existingViews,
@@ -109,6 +114,9 @@ public class ReferenceAnalyzerDomainService {
 
         if (activeVersion != null && activeVersion.getSnapshot() != null) {
             ModelSnapshot prev = activeVersion.getSnapshot();
+            if (changesPhysicalTable(prev, candidateSnap)) {
+                report.getBlockingReasons().add("已发布模型的物理表名称不能直接修改，须先迁移存量数据");
+            }
 
             // 识别新增字段与退役字段
             for (PropertyDef np : candidateSnap.getProperties()) {

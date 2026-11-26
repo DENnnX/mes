@@ -66,12 +66,12 @@ public class SqliteModelRepository implements ModelRepository {
             try { snapJson = objectMapper.writeValueAsString(v.getSnapshot()); } catch (Exception ignored) {}
         }
         jdbcTemplate.update(
-                "INSERT INTO meta_model_version (id, model_name, version_no, status, snapshot_json, validation_hash, validated_at, created_by, created_at) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+                "INSERT INTO meta_model_version (id, model_name, version_no, status, snapshot_json, pending_ui_json, validation_hash, validated_at, created_by, created_at) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
                         "ON CONFLICT(id) DO UPDATE SET status=excluded.status, snapshot_json=excluded.snapshot_json, " +
-                        "validation_hash=excluded.validation_hash, validated_at=excluded.validated_at",
+                        "pending_ui_json=excluded.pending_ui_json, validation_hash=excluded.validation_hash, validated_at=excluded.validated_at",
                 v.getId(), v.getModelName(), v.getVersionNo(), v.getStatus().name(),
-                snapJson, v.getValidationHash(), v.getValidatedAt(), v.getCreatedBy(), v.getCreatedAt());
+                snapJson, v.getPendingUiJson(), v.getValidationHash(), v.getValidatedAt(), v.getCreatedBy(), v.getCreatedAt());
     }
 
     @Override
@@ -158,6 +158,7 @@ public class SqliteModelRepository implements ModelRepository {
         v.setStatus(ModelVersion.Status.valueOf((String) r.get("status")));
         String json = (String) r.get("snapshot_json");
         v.setSnapshotJson(json);
+        v.setPendingUiJson((String) r.get("pending_ui_json"));
         if (json != null) {
             try { v.setSnapshot(objectMapper.readValue(json, ModelSnapshot.class)); } catch (Exception ignored) {}
         }

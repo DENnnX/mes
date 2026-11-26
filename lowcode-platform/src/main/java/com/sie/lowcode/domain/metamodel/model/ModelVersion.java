@@ -14,6 +14,7 @@ public class ModelVersion {
     private String versionNo;
     private Status status = Status.DRAFT;
     private String snapshotJson;
+    private String pendingUiJson;
     private ModelSnapshot snapshot;
     private String validationHash;
     private String validatedAt;
@@ -34,6 +35,8 @@ public class ModelVersion {
     public void setStatus(Status status) { this.status = status; }
     public String getSnapshotJson() { return snapshotJson; }
     public void setSnapshotJson(String snapshotJson) { this.snapshotJson = snapshotJson; }
+    public String getPendingUiJson() { return pendingUiJson; }
+    public void setPendingUiJson(String pendingUiJson) { this.pendingUiJson = pendingUiJson; }
     public ModelSnapshot getSnapshot() { return snapshot; }
     public void setSnapshot(ModelSnapshot snapshot) { this.snapshot = snapshot; }
     public String getValidationHash() { return validationHash; }

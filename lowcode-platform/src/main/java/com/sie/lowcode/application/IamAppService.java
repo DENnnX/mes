@@ -125,7 +125,7 @@ public class IamAppService {
     public List<Map<String, Object>> listPublicApps() {
         List<Map<String, Object>> list = new ArrayList<>();
         for (AppAggregate app : appRepository.findAll()) {
-            if ("platform_kernel".equals(app.getName())) continue;
+            if ("platform_kernel".equals(app.getName()) || "DRAFT".equals(app.getState())) continue;
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("name", app.getName());
             m.put("displayName", app.getDisplayName());
@@ -204,7 +204,7 @@ public class IamAppService {
     private List<Map<String, Object>> buildAuthorizedAppList(Set<String> allowedAppNames) {
         List<Map<String, Object>> list = new ArrayList<>();
         for (AppAggregate app : appRepository.findAll()) {
-            if ("platform_kernel".equals(app.getName())) continue;
+            if ("platform_kernel".equals(app.getName()) || "DRAFT".equals(app.getState())) continue;
             if (allowedAppNames == null || allowedAppNames.contains(app.getName())) {
                 Map<String, Object> m = new LinkedHashMap<>();
                 m.put("name", app.getName());
@@ -220,17 +220,20 @@ public class IamAppService {
 
     public void logout(String token) {
         if (token != null && !token.isBlank()) {
-            iamRepository.deleteSession(token);
+            iamRepository.deleteSession(sessionId(token));
         }
     }
 
     public Optional<UserAccount> authenticate(String token) {
         if (token == null || token.isBlank()) return Optional.empty();
-        String raw = token.startsWith("Bearer ") ? token.substring(7).trim() : token.trim();
-        Optional<String> uidOpt = iamRepository.findUserIdByToken(raw);
+        Optional<String> uidOpt = iamRepository.findUserIdByToken(sessionId(token));
         if (uidOpt.isEmpty()) return Optional.empty();
         return iamRepository.findUserById(uidOpt.get())
                 .filter(u -> "ACTIVE".equalsIgnoreCase(u.getStatus()));
+    }
+
+    private String sessionId(String token) {
+        return token.startsWith("Bearer ") ? token.substring(7).trim() : token.trim();
     }
 
     public Optional<UserAccount> findUserByUsername(String username) {

@@ -51,6 +51,7 @@ public class DefaultViewGeneratorService {
         buttons.add(buttonMap("删除", "delete", "delete", "danger", null, "确认删除该记录？", null, Map.of("id", "$row.id"), "refreshTable"));
         for (ServiceDef svc : snapshot.getServices()) {
             if (ServiceDef.TYPE_BUILTIN_CRUD.equalsIgnoreCase(svc.getType())) continue;
+            if ("validate".equals(svc.getName()) || "validateDelete".equals(svc.getName())) continue;
             String enableCond = null;
             if (svc.getTransitionRule() != null && !svc.getTransitionRule().getFromStates().isEmpty()) {
                 String sf = svc.getTransitionRule().getStatusField();

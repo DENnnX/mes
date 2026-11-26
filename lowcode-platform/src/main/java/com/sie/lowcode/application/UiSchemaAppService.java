@@ -189,17 +189,7 @@ public class UiSchemaAppService {
         Set<String> allowedApps = resolveTenantAllowedApps();
         Set<String> allowedMenus = resolveEffectiveAllowedMenus();
         if (menuName != null && !menuName.isBlank()) {
-            MenuNode menu = uiRepo.findMenuByName(menuName)
-                    .filter(m -> m.isActive() && m.getModel() != null && !m.getModel().isBlank())
-                    .orElseThrow(() -> DomainException.permissionDenied("页面不存在或未授权"));
-            if (!"platform_kernel".equals(menu.getAppName()) &&
-                    ((allowedApps != null && !allowedApps.contains(menu.getAppName()))
-                            || !matchesAllowedMenu(allowedMenus, menu))) {
-                throw DomainException.permissionDenied("页面不存在或未授权");
-            }
-            if (modelName != null && !modelName.isBlank() && !modelName.equals(menu.getModel())) {
-                throw DomainException.invalidParams("菜单与模型不匹配");
-            }
+            MenuNode menu = requireRuntimeMenu(menuName, modelName, allowedApps, allowedMenus);
             modelName = menu.getModel();
             viewKeysCsv = menu.getView();
         }
@@ -308,6 +298,7 @@ public class UiSchemaAppService {
         modelMeta.put("parents", snap.getParents());
 
         Map<String, Object> auth = buildGranularAuth(modelName, snap);
+        auth.put("targetServices", buildTargetServiceAuth(modelName, viewsMap.values(), allowedApps));
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("modelMeta", modelMeta);
@@ -328,6 +319,25 @@ public class UiSchemaAppService {
             }
         }
         return keys;
+    }
+
+    public String loadMenuFilter(String menuName, String modelName) {
+        return requireRuntimeMenu(menuName, modelName, resolveTenantAllowedApps(), resolveEffectiveAllowedMenus()).getFilter();
+    }
+
+    private MenuNode requireRuntimeMenu(String menuName, String modelName, Set<String> allowedApps, Set<String> allowedMenus) {
+        MenuNode menu = uiRepo.findMenuByName(menuName)
+                .filter(m -> m.isActive() && m.getModel() != null && !m.getModel().isBlank())
+                .orElseThrow(() -> DomainException.permissionDenied("页面不存在或未授权"));
+        if (!"platform_kernel".equals(menu.getAppName())
+                && ((allowedApps != null && !allowedApps.contains(menu.getAppName()))
+                    || !matchesAllowedMenu(allowedMenus, menu))) {
+            throw DomainException.permissionDenied("页面不存在或未授权");
+        }
+        if (modelName != null && !modelName.isBlank() && !modelName.equals(menu.getModel())) {
+            throw DomainException.invalidParams("菜单与模型不匹配");
+        }
+        return menu;
     }
 
     private Set<String> resolveTenantAllowedApps() {
@@ -434,6 +444,36 @@ public class UiSchemaAppService {
         }
         auth.put("services", svcPerms);
         return auth;
+    }
+
+    private Map<String, Map<String, Boolean>> buildTargetServiceAuth(String sourceModel, Collection<Object> views,
+                                                                    Set<String> allowedApps) {
+        MetaContext ctx = MetaContext.current();
+        boolean superUser = ctx == null || ctx.isSuperUser();
+        List<RoleDef> roles = superUser ? List.of() : iamAppService.resolveRoles(ctx.getRoleCodes());
+        Map<String, Map<String, Boolean>> permissions = new LinkedHashMap<>();
+
+        for (Object configuredView : new LinkedHashSet<>(views)) {
+            if (!(configuredView instanceof UiViewDef view) || !"grid".equals(view.getType())) continue;
+            for (String location : List.of("buttons", "tbar")) {
+                if (!(view.getBody().get(location) instanceof List<?> buttons)) continue;
+                for (Object item : buttons) {
+                    if (!(item instanceof Map<?, ?> button) || !(button.get("model") instanceof String targetModel)
+                            || !(button.get("service") instanceof String service) || targetModel.equals(sourceModel)) continue;
+                    ModelAggregate target = memoryRegistry.getModelAggregate(targetModel);
+                    ModelSnapshot targetSnapshot = memoryRegistry.getActiveSnapshotOrNull(targetModel);
+                    boolean available = target != null && target.isAvailableForRuntime() && targetSnapshot != null
+                            && !targetSnapshot.isAbstractModel() && !targetSnapshot.isExtensionPackage()
+                            && (allowedApps == null || "platform_kernel".equals(targetSnapshot.getAppName())
+                                || allowedApps.contains(targetSnapshot.getAppName()));
+                    ServiceDef definition = available ? targetSnapshot.getService(service) : null;
+                    boolean allowed = available && (superUser || hasPerm(roles, targetModel, service)
+                            || (definition != null && hasPerm(roles, targetModel, definition.getAuth())));
+                    permissions.computeIfAbsent(targetModel, key -> new LinkedHashMap<>()).put(service, allowed);
+                }
+            }
+        }
+        return permissions;
     }
 
     private boolean hasPerm(List<RoleDef> roles, String model, String service) {

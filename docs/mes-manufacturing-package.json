@@ -1,8 +1,9 @@
 {
-  "app": {"name": "mes_manufacturing", "displayName": "生产制造 MES", "category": "manufacturing", "version": "1.0.0", "description": "维护产品、物料和工艺，执行生产工单。"},
+  "app": {"name": "mes_manufacturing", "displayName": "生产制造 MES", "category": "manufacturing", "version": "1.2.0", "description": "维护物料、产品和工艺，按工序执行生产工单并记录报工。"},
   "models": [
     {
       "name": "mes_material",
+      "versionNo": "1.2.0",
       "displayName": "物料",
       "properties": [
         {"name": "code", "displayName": "物料编码", "dataType": "String", "required": true, "unique": true, "maxLength": 40},
@@ -12,6 +13,7 @@
     },
     {
       "name": "mes_product",
+      "versionNo": "1.2.0",
       "displayName": "产品",
       "properties": [
         {"name": "code", "displayName": "产品编码", "dataType": "String", "required": true, "unique": true, "maxLength": 40},
@@ -22,6 +24,7 @@
     },
     {
       "name": "mes_product_bom",
+      "versionNo": "1.2.0",
       "displayName": "产品 BOM",
       "indexes": [
         {
@@ -38,7 +41,18 @@
     },
     {
       "name": "mes_process_route",
+      "versionNo": "1.2.0",
       "displayName": "工艺路线",
+      "validateWritesWithActiveVersion": true,
+      "services": [
+        {
+          "name": "validate",
+          "displayName": "工艺路线引用校验",
+          "type": "GROOVY_SCRIPT",
+          "auth": "update",
+          "scriptContent": "import com.sie.lowcode.domain.runtime.RecordData\nimport com.sie.lowcode.domain.shared.DomainException\n\nif (args.create || !row || !args.values.containsKey('product_id')) return true\ndef values = new RecordData(args.values)\nif (values.getStr('product_id') == row.getStr('product_id')) return true\n\ndef previousScope = env.getDataScope()\ntry {\n    env.setDataScope('ALL')\n    if (env.get('mes_work_order').call('exists', [filter: [['route_id', '=', args.id]]])) {\n        throw DomainException.stateGuardFailed('工艺路线已被生产工单引用，不可更换适用产品')\n    }\n} finally {\n    env.setDataScope(previousScope)\n}\nreturn true"
+        }
+      ],
       "properties": [
         {"name": "code", "displayName": "路线编码", "dataType": "String", "required": true, "unique": true, "maxLength": 40},
         {"name": "name", "displayName": "路线名称", "dataType": "String", "required": true, "displayForModel": true, "maxLength": 100},
@@ -48,6 +62,7 @@
     },
     {
       "name": "mes_process",
+      "versionNo": "1.2.0",
       "displayName": "工序",
       "orderBy": "step_no asc",
       "indexes": [
@@ -66,6 +81,7 @@
     },
     {
       "name": "mes_process_bom",
+      "versionNo": "1.2.0",
       "displayName": "工序 BOM",
       "indexes": [
         {
@@ -82,7 +98,9 @@
     },
     {
       "name": "mes_work_order",
+      "versionNo": "1.2.0",
       "displayName": "生产工单",
+      "validateWritesWithActiveVersion": true,
       "properties": [
         {"name": "order_no", "displayName": "工单号", "dataType": "String", "required": true, "unique": true, "displayForModel": true, "maxLength": 40},
         {"name": "product_id", "displayName": "产品", "dataType": "ManyToOne", "required": true, "relateModel": "mes_product"},
@@ -97,41 +115,143 @@
           "values": [
             {"value": "PENDING", "label": "待生产", "color": "info"},
             {"value": "RUNNING", "label": "生产中", "color": "warning"},
-            {"value": "DONE", "label": "已完成", "color": "success"}
+            {"value": "DONE", "label": "已完成", "color": "success"},
+            {"value": "CANCELLED", "label": "已作废", "color": "danger"}
+          ]
+        },
+        {"name": "actual_quantity", "displayName": "实际产量", "dataType": "Integer", "minValue": 0},
+        {"name": "started_at", "displayName": "开工时间", "dataType": "DateTime"},
+        {"name": "started_by", "displayName": "开工账号", "dataType": "String"},
+        {"name": "finished_at", "displayName": "完工时间", "dataType": "DateTime"},
+        {"name": "finished_by", "displayName": "完工账号", "dataType": "String"},
+        {"name": "cancelled_at", "displayName": "作废时间", "dataType": "DateTime"},
+        {"name": "cancelled_by", "displayName": "作废账号", "dataType": "String"},
+        {"name": "cancel_reason", "displayName": "作废原因", "dataType": "Text", "maxLength": 200},
+        {"name": "operations_prepared", "displayName": "已准备工序", "dataType": "Boolean", "defaultValue": false, "display": false},
+        {
+          "name": "operation_executions",
+          "displayName": "工序执行记录",
+          "dataType": "OneToMany",
+          "relateModel": "mes_operation_execution",
+          "inverseName": "order_id",
+          "display": false
+        }
+      ],
+      "services": [
+        {
+          "name": "validate",
+          "displayName": "工单保存校验",
+          "type": "GROOVY_SCRIPT",
+          "auth": "update",
+          "scriptContent": "import com.sie.lowcode.domain.runtime.RecordData\nimport com.sie.lowcode.domain.shared.DomainException\n\ndef changes = new RecordData(args.values)\ndef current = args.create ? null : row\ndef status = current?.getStr('status')\ndef workflowFields = ['status', 'operations_prepared', 'operation_executions', 'started_at', 'started_by',\n                      'finished_at', 'finished_by', 'actual_quantity', 'cancelled_at', 'cancelled_by', 'cancel_reason']\nif (!args.serviceWrite) {\n    if (!args.create && status != 'PENDING') {\n        throw DomainException.stateGuardFailed('仅待生产工单可以编辑')\n    }\n    if (workflowFields.any { field ->\n        def value = changes.get(field)\n        if (!changes.containsKey(field)) return false\n        if (field == 'status' && args.create) return value != null && value != 'PENDING'\n        if (field == 'operations_prepared') return value == true\n        return value != current?.get(field)\n    }) {\n        throw DomainException.stateGuardFailed('执行记录须由工单操作生成')\n    }\n}\n// Existing orders can still be cancelled if their old reference data needs correction.\nif (args.serviceWrite && changes.getStr('status') == 'CANCELLED') return true\ndef productId = changes.containsKey('product_id') ? changes.getStr('product_id') : current?.getStr('product_id')\ndef routeId = changes.containsKey('route_id') ? changes.getStr('route_id') : current?.getStr('route_id')\nif (!productId?.trim() || !routeId?.trim()) {\n    throw DomainException.invalidParams('生产工单必须选择产品和工艺路线')\n}\ndef scope = env.getDataScope()\ntry {\n    env.setDataScope('ALL')\n    def route = env.get('mes_process_route').call('find', [id: routeId])\n    if (route.getStr('product_id') != productId) {\n        throw DomainException.invalidParams('所选工艺路线不适用于该产品')\n    }\n} finally {\n    env.setDataScope(scope)\n}\nreturn true"
+        },
+        {
+          "name": "validateDelete",
+          "displayName": "工单删除校验",
+          "type": "GROOVY_SCRIPT",
+          "auth": "delete",
+          "scriptContent": "import com.sie.lowcode.domain.shared.DomainException\n\nif (row && row.getStr('status') != 'PENDING') {\n    throw DomainException.stateGuardFailed('仅待生产工单可以删除，生产中可作废并保留记录')\n}\nreturn true"
+        },
+        {
+          "name": "startProduction",
+          "displayName": "开工或补建报工工序",
+          "type": "GROOVY_SCRIPT",
+          "auth": "action",
+          "scriptContent": "import com.sie.lowcode.domain.shared.DomainException\n\nif (!row) throw DomainException.invalidParams('工单不存在')\ndef status = row.getStr('status')\ndef executables = row.get('operation_executions')\nif (status != 'PENDING' && !(status == 'RUNNING' && !row.getBool('operations_prepared') && !executables)) {\n    throw DomainException.stateGuardFailed('仅待生产工单可开工，旧版在制工单仅可补建一次工序')\n}\n\ndef plannedQuantity\ntry {\n    plannedQuantity = new BigDecimal(row.getStr('planned_quantity') ?: '0').intValueExact()\n    if (plannedQuantity <= 0) throw new NumberFormatException()\n} catch (NumberFormatException | ArithmeticException ignored) {\n    throw DomainException.invalidParams('计划数量必须是正整数，请先修正工单')\n}\n\ndef steps = []\ndef scope = env.getDataScope()\ntry {\n    env.setDataScope('ALL')\n    def process = env.get('mes_process')\n    def filter = [['route_id', '=', row.getStr('route_id')]]\n    while (true) {\n        def page = process.call('search', [filter: filter, order: 'step_no asc', limit: 500, offset: steps.size()])\n        steps.addAll(page.records)\n        if (steps.size() >= page.total || !page.records) break\n    }\n} finally {\n    env.setDataScope(scope)\n}\nif (!steps) throw DomainException.stateGuardFailed('工艺路线至少要有一道工序才能开工')\n\ndef commands = steps.withIndex().collect { step, index ->\n    [0, 0, [step_no: step.getInt('step_no'), operation_name: step.getStr('name'),\n            planned_quantity: plannedQuantity, is_final: index == steps.size() - 1]]\n}\ndef values = [status: 'RUNNING', operations_prepared: true, operation_executions: commands]\nif (status == 'PENDING') {\n    values.started_at = now\n    values.started_by = env.getUsername() ?: currentUser\n}\nreturn rs.updateFromService([id: row.getId(), version: row.getInt('version'), values: values])"
+        },
+        {
+          "name": "finishProduction",
+          "displayName": "完工",
+          "type": "GROOVY_SCRIPT",
+          "auth": "action",
+          "scriptContent": "import com.sie.lowcode.domain.shared.DomainException\n\nif (!row || row.getStr('status') != 'RUNNING') {\n    throw DomainException.stateGuardFailed('仅生产中的工单可以完工')\n}\ndef last\ndef scope = env.getDataScope()\ntry {\n    env.setDataScope('ALL')\n    def operations = env.get('mes_operation_execution')\n    def criteria = [['order_id', '=', row.getId()]]\n    last = operations.call('search', [filter: criteria, order: 'step_no desc', limit: 1]).records.find()\n    if (!last || operations.call('exists', [filter: criteria + [['status', '!=', 'DONE']]])) {\n        throw DomainException.stateGuardFailed('须先完成全部工序报工')\n    }\n} finally {\n    env.setDataScope(scope)\n}\nreturn rs.updateFromService([id: row.getId(), version: row.getInt('version'), values: [\n    status: 'DONE', actual_quantity: last.getInt('actual_quantity'), finished_at: now,\n    finished_by: env.getUsername() ?: currentUser\n]])"
+        },
+        {
+          "name": "cancelProduction",
+          "displayName": "作废",
+          "type": "GROOVY_SCRIPT",
+          "auth": "action",
+          "scriptContent": "import com.sie.lowcode.domain.shared.DomainException\n\nif (!row || !(row.getStr('status') in ['PENDING', 'RUNNING'])) {\n    throw DomainException.stateGuardFailed('仅待生产或生产中的工单可以作废')\n}\ndef reason = args.reason?.toString()?.trim()\nif (!reason || reason.size() > 200) throw DomainException.invalidParams('请输入 1 至 200 字的作废原因')\nreturn rs.updateFromService([id: row.getId(), version: row.getInt('version'), values: [\n    status: 'CANCELLED', cancel_reason: reason, cancelled_at: now, cancelled_by: env.getUsername() ?: currentUser\n]])"
+        }
+      ],
+      "useActiveVersionForRecords": true
+    },
+    {
+      "name": "mes_operation_execution",
+      "displayName": "工序报工",
+      "versionNo": "1.2.0",
+      "orderBy": "step_no asc",
+      "indexes": [
+        {
+          "name": "uq_mes_order_execution_step",
+          "columnList": ["order_id", "step_no"],
+          "unique": true
+        }
+      ],
+      "properties": [
+        {"name": "order_id", "displayName": "生产工单", "dataType": "ManyToOne", "required": true, "relateModel": "mes_work_order", "onDelete": "RESTRICT"},
+        {"name": "step_no", "displayName": "工序序号", "dataType": "Integer", "required": true, "minValue": 1},
+        {"name": "operation_name", "displayName": "工序名称", "dataType": "String", "required": true, "displayForModel": true, "maxLength": 100},
+        {"name": "planned_quantity", "displayName": "计划数量", "dataType": "Integer", "required": true, "minValue": 1},
+        {"name": "actual_quantity", "displayName": "实际数量", "dataType": "Integer", "minValue": 0},
+        {
+          "name": "status",
+          "displayName": "工序状态",
+          "dataType": "Selection",
+          "defaultValue": "PENDING",
+          "values": [
+            {"value": "PENDING", "label": "待加工", "color": "info"},
+            {"value": "RUNNING", "label": "加工中", "color": "warning"},
+            {"value": "DONE", "label": "已报工", "color": "success"}
+          ]
+        },
+        {"name": "started_at", "displayName": "开工时间", "dataType": "DateTime"},
+        {"name": "started_by", "displayName": "开工账号", "dataType": "String"},
+        {"name": "reported_at", "displayName": "报工时间", "dataType": "DateTime"},
+        {"name": "reported_by", "displayName": "报工账号", "dataType": "String"},
+        {"name": "is_final", "displayName": "末道工序", "dataType": "Boolean", "defaultValue": false, "display": false},
+        {
+          "name": "order_status",
+          "displayName": "工单状态",
+          "dataType": "Selection",
+          "related": "order_id.status",
+          "store": false,
+          "values": [
+            {"value": "PENDING", "label": "待生产", "color": "info"},
+            {"value": "RUNNING", "label": "生产中", "color": "warning"},
+            {"value": "DONE", "label": "已完成", "color": "success"},
+            {"value": "CANCELLED", "label": "已作废", "color": "danger"}
           ]
         }
       ],
       "services": [
         {
           "name": "validate",
-          "displayName": "工单产品、路线与状态校验",
+          "displayName": "工序执行记录校验",
           "type": "GROOVY_SCRIPT",
           "auth": "update",
-          "scriptContent": "import com.sie.lowcode.domain.runtime.RecordData\nimport com.sie.lowcode.domain.shared.DomainException\n\ndef values = new RecordData(args.values)\ndef current = args.create ? null : row\ndef productId = values.containsKey('product_id') ? values.getStr('product_id') : current?.getStr('product_id')\ndef routeId = values.containsKey('route_id') ? values.getStr('route_id') : current?.getStr('route_id')\nif (!productId?.trim() || !routeId?.trim()) {\n    throw DomainException.invalidParams('生产工单必须选择产品和工艺路线')\n}\n\ndef route = env.get('mes_process_route').call('find', [id: routeId])\nif (route.getStr('product_id') != productId) {\n    throw DomainException.invalidParams('所选工艺路线不适用于该产品')\n}\n\ndef oldStatus = current?.getStr('status')\ndef status = values.getStr('status')\nif (args.create && status && status != 'PENDING') {\n    throw DomainException.stateGuardFailed('新工单只能处于待生产状态')\n}\nif (!args.create && values.containsKey('status') && status != oldStatus) {\n    def permitted = [PENDING: 'RUNNING', RUNNING: 'DONE'].get(oldStatus)\n    if (!permitted || status != permitted) {\n        throw DomainException.stateGuardFailed('工单只允许按待生产、生产中、已完成的顺序流转')\n    }\n}\nreturn true"
+          "scriptContent": "import com.sie.lowcode.domain.shared.DomainException\n\nif (!args.serviceWrite) throw DomainException.stateGuardFailed('工序记录须通过开工和报工操作写入')\nreturn true"
         },
         {
-          "name": "startProduction",
-          "displayName": "开工",
-          "type": "STATE_TRANSITION",
-          "auth": "action",
-          "transitionRule": {
-            "statusField": "status",
-            "fromStates": ["PENDING"],
-            "toState": "RUNNING",
-            "errorMessage": "仅待生产的工单可以开工"
-          }
+          "name": "validateDelete",
+          "displayName": "工序执行记录保留校验",
+          "type": "GROOVY_SCRIPT",
+          "auth": "delete",
+          "scriptContent": "import com.sie.lowcode.domain.shared.DomainException\n\nif (row) throw DomainException.stateGuardFailed('工序执行记录必须保留')\nreturn true"
         },
         {
-          "name": "finishProduction",
-          "displayName": "完工",
-          "type": "STATE_TRANSITION",
+          "name": "startOperation",
+          "displayName": "工序开工",
+          "type": "GROOVY_SCRIPT",
           "auth": "action",
-          "transitionRule": {
-            "statusField": "status",
-            "fromStates": ["RUNNING"],
-            "toState": "DONE",
-            "errorMessage": "仅生产中的工单可以完工"
-          }
+          "scriptContent": "import com.sie.lowcode.domain.shared.DomainException\n\nif (!row || row.getStr('status') != 'PENDING') {\n    throw DomainException.stateGuardFailed('仅待加工工序可以开工')\n}\ndef scope = env.getDataScope()\ntry {\n    env.setDataScope('ALL')\n    def order = env.get('mes_work_order').call('find', [id: row.getStr('order_id')])\n    if (order.getStr('status') != 'RUNNING') throw DomainException.stateGuardFailed('工单须处于生产中')\n    def earlier = [['order_id', '=', order.getId()], ['step_no', '<', row.getInt('step_no')], ['status', '!=', 'DONE']]\n    if (rs.call('exists', [filter: earlier])) throw DomainException.stateGuardFailed('请先报工前序工序')\n} finally {\n    env.setDataScope(scope)\n}\nreturn rs.updateFromService([id: row.getId(), version: row.getInt('version'), values: [\n    status: 'RUNNING', started_at: now, started_by: env.getUsername() ?: currentUser\n]])"
+        },
+        {
+          "name": "reportOperation",
+          "displayName": "工序报工",
+          "type": "GROOVY_SCRIPT",
+          "auth": "action",
+          "scriptContent": "import com.sie.lowcode.domain.shared.DomainException\n\nif (!row || row.getStr('status') != 'RUNNING') {\n    throw DomainException.stateGuardFailed('仅加工中的工序可以报工')\n}\ndef quantity\ntry {\n    if (args.actual_quantity == null) throw new NumberFormatException()\n    quantity = new BigDecimal(args.actual_quantity.toString()).intValueExact()\n    if (quantity < 0) throw new NumberFormatException()\n} catch (NumberFormatException | ArithmeticException ignored) {\n    throw DomainException.invalidParams('实际数量必须为非负整数')\n}\ndef scope = env.getDataScope()\ntry {\n    env.setDataScope('ALL')\n    def order = env.get('mes_work_order').call('find', [id: row.getStr('order_id')])\n    if (order.getStr('status') != 'RUNNING') throw DomainException.stateGuardFailed('工单须处于生产中')\n} finally {\n    env.setDataScope(scope)\n}\nreturn rs.updateFromService([id: row.getId(), version: row.getInt('version'), values: [\n    status: 'DONE', actual_quantity: quantity, reported_at: now, reported_by: env.getUsername() ?: currentUser\n]])"
         }
       ]
     }
@@ -149,14 +269,16 @@
           {"name": "route_id"},
           {"name": "planned_quantity"},
           {"name": "due_date"},
-          {"name": "status"}
+          {"name": "status"},
+          {"name": "actual_quantity"}
         ],
         "tbar": [
           {"name": "新增", "action": "create", "auth": "create", "type": "primary"}
         ],
         "buttons": [
           {"name": "详情", "action": "preview", "auth": "read", "type": "default"},
-          {"name": "编辑", "action": "edit", "auth": "update", "type": "primary"},
+          {"name": "编辑", "action": "edit", "auth": "update", "type": "primary", "enableCondition": "row.status === 'PENDING'"},
+          {"name": "删除", "action": "delete", "auth": "delete", "type": "danger", "enableCondition": "row.status === 'PENDING'", "confirm": "删除待生产工单？"},
           {
             "name": "开工",
             "action": "custom",
@@ -168,14 +290,37 @@
             "actionAfter": "refreshTable"
           },
           {
+            "name": "补建报工工序",
+            "action": "custom",
+            "service": "startProduction",
+            "auth": "action",
+            "type": "success",
+            "enableCondition": "row.status === 'RUNNING' && !row.operations_prepared",
+            "args": {"id": "$row.id"},
+            "actionAfter": "refreshTable"
+          },
+          {
             "name": "完工",
             "action": "custom",
             "service": "finishProduction",
             "auth": "action",
             "type": "success",
-            "enableCondition": "row.status === 'RUNNING'",
+            "enableCondition": "row.status === 'RUNNING' && row.operations_prepared",
             "args": {"id": "$row.id"},
             "actionAfter": "refreshTable"
+          },
+          {
+            "name": "作废",
+            "action": "custom",
+            "service": "cancelProduction",
+            "auth": "action",
+            "type": "warning",
+            "enableCondition": "['PENDING', 'RUNNING'].includes(row.status)",
+            "args": {"id": "$row.id"},
+            "actionAfter": "refreshTable",
+            "paramsForm": [
+              {"name": "reason", "displayName": "作废原因", "dataType": "Text", "required": true, "maxLength": 200}
+            ]
           }
         ]
       }
@@ -190,6 +335,7 @@
           {"name": "order_no"},
           {"name": "route_id"},
           {"name": "planned_quantity"},
+          {"name": "actual_quantity"},
           {"name": "status", "displayName": "执行状态"}
         ],
         "buttons": [
@@ -205,14 +351,37 @@
             "actionAfter": "refreshTable"
           },
           {
+            "name": "补建报工工序",
+            "action": "custom",
+            "service": "startProduction",
+            "auth": "action",
+            "type": "success",
+            "enableCondition": "row.status === 'RUNNING' && !row.operations_prepared",
+            "args": {"id": "$row.id"},
+            "actionAfter": "refreshTable"
+          },
+          {
             "name": "完工",
             "action": "custom",
             "service": "finishProduction",
             "auth": "action",
             "type": "success",
-            "enableCondition": "row.status === 'RUNNING'",
+            "enableCondition": "row.status === 'RUNNING' && row.operations_prepared",
             "args": {"id": "$row.id"},
             "actionAfter": "refreshTable"
+          },
+          {
+            "name": "作废",
+            "action": "custom",
+            "service": "cancelProduction",
+            "auth": "action",
+            "type": "warning",
+            "enableCondition": "['PENDING', 'RUNNING'].includes(row.status)",
+            "args": {"id": "$row.id"},
+            "actionAfter": "refreshTable",
+            "paramsForm": [
+              {"name": "reason", "displayName": "作废原因", "dataType": "Text", "required": true, "maxLength": 200}
+            ]
           }
         ]
       }
@@ -225,7 +394,8 @@
         "type": "search",
         "columns": [
           {"name": "order_no"},
-          {"name": "status"}
+          {"name": "status"},
+          {"name": "due_date"}
         ]
       }
     },
@@ -240,7 +410,157 @@
           {"name": "product_id"},
           {"name": "route_id"},
           {"name": "planned_quantity"},
-          {"name": "due_date"}
+          {"name": "due_date"},
+          {"name": "status", "detailOnly": true},
+          {"name": "actual_quantity", "detailOnly": true},
+          {"name": "started_at", "detailOnly": true},
+          {"name": "started_by", "detailOnly": true},
+          {"name": "finished_at", "detailOnly": true},
+          {"name": "finished_by", "detailOnly": true},
+          {"name": "cancelled_at", "detailOnly": true},
+          {"name": "cancelled_by", "detailOnly": true},
+          {"name": "cancel_reason", "detailOnly": true}
+        ],
+        "editCondition": "row.status === 'PENDING'",
+        "groupConf": [
+          {
+            "title": "生产计划",
+            "columns": ["order_no", "product_id", "route_id", "planned_quantity", "due_date"]
+          },
+          {
+            "title": "执行结果",
+            "columns": ["status", "actual_quantity", "started_at", "started_by", "finished_at", "finished_by"]
+          },
+          {
+            "title": "作废记录",
+            "columns": ["cancelled_at", "cancelled_by", "cancel_reason"]
+          }
+        ],
+        "tabs": [
+          {
+            "header": "工序执行记录",
+            "body": {
+              "type": "grid,form",
+              "field": "operation_executions",
+              "relateModel": "mes_operation_execution",
+              "readonly": true,
+              "columns": [
+                {"name": "step_no", "displayName": "序号"},
+                {"name": "operation_name", "displayName": "工序"},
+                {
+                  "name": "status",
+                  "displayName": "状态",
+                  "values": [
+                    {"value": "PENDING", "label": "待加工", "color": "info"},
+                    {"value": "RUNNING", "label": "加工中", "color": "warning"},
+                    {"value": "DONE", "label": "已报工", "color": "success"}
+                  ]
+                },
+                {"name": "actual_quantity", "displayName": "实际数量"},
+                {"name": "reported_at", "displayName": "报工时间"},
+                {"name": "reported_by", "displayName": "报工账号"}
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "mes_operation_execution_grid": {
+      "name": "工序报工列表",
+      "model": "mes_operation_execution",
+      "type": "grid",
+      "body": {
+        "type": "grid",
+        "columns": [
+          {"name": "order_id"},
+          {"name": "step_no"},
+          {"name": "operation_name"},
+          {"name": "planned_quantity"},
+          {"name": "actual_quantity"},
+          {"name": "status"},
+          {"name": "reported_at"},
+          {"name": "reported_by"}
+        ],
+        "buttons": [
+          {"name": "详情", "action": "preview", "auth": "read", "type": "default"},
+          {
+            "name": "工序开工",
+            "action": "custom",
+            "service": "startOperation",
+            "auth": "action",
+            "type": "success",
+            "enableCondition": "row.status === 'PENDING' && row.order_status === 'RUNNING'",
+            "args": {"id": "$row.id"},
+            "actionAfter": "refreshTable"
+          },
+          {
+            "name": "报工",
+            "action": "custom",
+            "service": "reportOperation",
+            "auth": "action",
+            "type": "success",
+            "enableCondition": "row.status === 'RUNNING' && row.order_status === 'RUNNING'",
+            "args": {"id": "$row.id"},
+            "actionAfter": "refreshTable",
+            "paramsForm": [
+              {"name": "actual_quantity", "displayName": "实际数量", "dataType": "Integer", "required": true, "minValue": 0}
+            ]
+          },
+          {
+            "name": "整单完工",
+            "action": "custom",
+            "service": "finishProduction",
+            "auth": "action",
+            "type": "success",
+            "enableCondition": "row.is_final && row.status === 'DONE' && row.order_status === 'RUNNING'",
+            "args": {"id": "$row.order_id"},
+            "actionAfter": "refreshTable",
+            "model": "mes_work_order"
+          }
+        ]
+      }
+    },
+    "mes_operation_execution_search": {
+      "name": "工序报工搜索",
+      "model": "mes_operation_execution",
+      "type": "search",
+      "body": {
+        "type": "search",
+        "columns": [
+          {"name": "order_id"},
+          {"name": "status"},
+          {"name": "reported_at"}
+        ]
+      }
+    },
+    "mes_operation_execution_form": {
+      "name": "工序执行详情",
+      "model": "mes_operation_execution",
+      "type": "form",
+      "body": {
+        "type": "form",
+        "editable": false,
+        "columns": [
+          {"name": "order_id", "detailOnly": true},
+          {"name": "step_no", "detailOnly": true},
+          {"name": "operation_name", "detailOnly": true},
+          {"name": "planned_quantity", "detailOnly": true},
+          {"name": "actual_quantity", "detailOnly": true},
+          {"name": "status", "detailOnly": true},
+          {"name": "started_at", "detailOnly": true},
+          {"name": "started_by", "detailOnly": true},
+          {"name": "reported_at", "detailOnly": true},
+          {"name": "reported_by", "detailOnly": true}
+        ],
+        "groupConf": [
+          {
+            "title": "工序信息",
+            "columns": ["order_id", "step_no", "operation_name", "planned_quantity", "actual_quantity", "status"]
+          },
+          {
+            "title": "工序留痕",
+            "columns": ["started_at", "started_by", "reported_at", "reported_by"]
+          }
         ]
       }
     }
@@ -249,6 +569,7 @@
     "mes_manufacturing_root_menu": {"name": "mes_manufacturing_root_menu", "display_name": "生产制造 MES", "sequence": 10},
     "mes_material_menu": {
       "name": "mes_material_menu",
+      "versionNo": "1.1.0",
       "display_name": "物料",
       "sequence": 10,
       "model": "mes_material",
@@ -257,6 +578,7 @@
     },
     "mes_product_menu": {
       "name": "mes_product_menu",
+      "versionNo": "1.1.0",
       "display_name": "产品",
       "sequence": 20,
       "model": "mes_product",
@@ -265,6 +587,7 @@
     },
     "mes_product_bom_menu": {
       "name": "mes_product_bom_menu",
+      "versionNo": "1.1.0",
       "display_name": "产品 BOM",
       "sequence": 30,
       "model": "mes_product_bom",
@@ -273,6 +596,7 @@
     },
     "mes_process_route_menu": {
       "name": "mes_process_route_menu",
+      "versionNo": "1.1.0",
       "display_name": "工艺路线",
       "sequence": 40,
       "model": "mes_process_route",
@@ -281,6 +605,7 @@
     },
     "mes_process_menu": {
       "name": "mes_process_menu",
+      "versionNo": "1.1.0",
       "display_name": "工序",
       "sequence": 50,
       "model": "mes_process",
@@ -289,6 +614,7 @@
     },
     "mes_process_bom_menu": {
       "name": "mes_process_bom_menu",
+      "versionNo": "1.1.0",
       "display_name": "工序 BOM",
       "sequence": 60,
       "model": "mes_process_bom",
@@ -297,6 +623,7 @@
     },
     "mes_work_order_menu": {
       "name": "mes_work_order_menu",
+      "versionNo": "1.1.0",
       "display_name": "生产工单",
       "sequence": 70,
       "model": "mes_work_order",
@@ -305,10 +632,19 @@
     },
     "mes_work_order_execution_menu": {
       "name": "mes_work_order_execution_menu",
+      "versionNo": "1.1.0",
       "display_name": "工单执行",
       "sequence": 80,
       "model": "mes_work_order",
       "view": "mes_work_order_execution_grid,mes_work_order_search,mes_work_order_form",
+      "parent_ids": {"@ref": "mes_manufacturing_root_menu"}
+    },
+    "mes_operation_execution_menu": {
+      "name": "mes_operation_execution_menu",
+      "display_name": "工序报工",
+      "sequence": 90,
+      "model": "mes_operation_execution",
+      "view": "mes_operation_execution_grid,mes_operation_execution_search,mes_operation_execution_form",
       "parent_ids": {"@ref": "mes_manufacturing_root_menu"}
     }
   }
