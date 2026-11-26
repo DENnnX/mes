@@ -6,22 +6,17 @@
   <div v-else class="lc-login-page">
     <div class="lc-login-card">
       <div class="lc-login-hero">
-        <div>
-          <div style="display:flex;align-items:center;gap:10px;">
-            <div style="width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-                <rect x="3" y="3" width="7" height="7" rx="1.5" />
-                <rect x="14" y="3" width="7" height="7" rx="1.5" />
-                <rect x="3" y="14" width="7" height="7" rx="1.5" />
-                <path d="M14 17.5h7M17.5 14v7" />
-              </svg>
-            </div>
-            <span style="font-size:15px;font-weight:600;letter-spacing:0.3px;">云枢低代码平台</span>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="width:42px;height:42px;border-radius:11px;background:rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <rect x="3" y="3" width="7" height="7" rx="1.5" />
+              <rect x="14" y="3" width="7" height="7" rx="1.5" />
+              <rect x="3" y="14" width="7" height="7" rx="1.5" />
+              <path d="M14 17.5h7M17.5 14v7" />
+            </svg>
           </div>
-          <h1>模型驱动 · 按需构建</h1>
-          <p>在线设计数据表与表单页面，按租户自动隔离并统一分配应用权限。</p>
+          <span style="font-size:18px;font-weight:700;letter-spacing:0.4px;">云枢低代码平台</span>
         </div>
-        <div style="font-size:12px;opacity:0.75;">CloudForge · Vue 3 SFC v2.1</div>
       </div>
 
       <div class="lc-login-form-box">

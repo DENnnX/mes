@@ -68,7 +68,8 @@ html, body, #app {
   padding: 44px 34px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: center;
 }
 .lc-login-hero h1 { font-size: 24px; margin: 28px 0 12px; line-height: 1.38; font-weight: 700; }
 .lc-login-hero p { font-size: 13.5px; line-height: 1.7; opacity: 0.9; margin: 0; }
