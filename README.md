@@ -22,7 +22,7 @@
     ├── Dockerfile                    # Docker 镜像构建文件
     ├── docker-compose.yml            # Docker Compose 编排配置（默认端口 8088）
     └── src/
-        ├── main/java/com/sie/lowcode/
+        ├── main/java/com/edu/scnu/
         │   ├── interfaces/           # 统一 JSON-RPC 2.0 网关、4环责任链与文件上传下载接口
         │   ├── application/          # 应用编排（模型治理、UI渲染、字典编码、多租户IAM、API文档）
         │   ├── domain/               # 领域模型、继承与影响分析、RecordSet、Filter DSL、验证钩子
