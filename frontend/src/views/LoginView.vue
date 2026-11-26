@@ -1,18 +1,15 @@
 <template>
-  <div v-if="authStore.authChecking" style="height:100vh;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:14px;">
+  <div v-if="authStore.authChecking" style="height:100vh;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:14px;">
     正在验证会话状态...
   </div>
 
   <main v-else class="lc-login-page">
     <div class="lc-login-card">
-      <div class="lc-brand lc-login-brand">
-        <div class="lc-logo" aria-hidden="true">
-          <el-icon :size="17"><Grid /></el-icon>
-        </div>
-        <span class="lc-title">云枢低代码应用平台</span>
-      </div>
-
       <div class="lc-login-form-box">
+        <div class="lc-brand lc-login-brand">
+          <div class="lc-logo" aria-hidden="true"><el-icon :size="17"><Grid /></el-icon></div>
+          <span class="lc-title">云枢低代码应用平台</span>
+        </div>
         <h1>账号登录</h1>
 
         <el-alert v-if="loginError" :title="loginError" type="error" show-icon :closable="true" @close="loginError = ''" style="margin-bottom:16px;" />
@@ -36,10 +33,10 @@
         <div class="lc-login-footer-hint">
           <el-popover placement="top-end" :width="320" trigger="click">
             <template #reference>
-              <el-button link size="small" style="color:#64748b;">系统初始账号说明</el-button>
+              <el-button link size="small" style="color:var(--text-muted);">系统初始账号说明</el-button>
             </template>
             <div style="font-size:12.5px;line-height:1.7;">
-              <div style="font-weight:600;margin-bottom:6px;color:#0f172a;">系统初始化默认账号（初始密码 123456）：</div>
+              <div style="font-weight:600;margin-bottom:6px;color:var(--text-main);">系统初始化默认账号（初始密码 123456）：</div>
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
                 <span><code>admin</code> — 系统管理员（全部应用与管理）</span>
                 <el-button link type="primary" size="small" @click="fillPresetAccount('admin')">填入</el-button>
@@ -51,6 +48,13 @@
             </div>
           </el-popover>
         </div>
+      </div>
+      <div class="lc-login-art lc-dotted" aria-hidden="true">
+        <div class="lc-login-orbit">
+          <span></span><span></span><span></span>
+          <div class="lc-logo"><el-icon :size="25"><Grid /></el-icon></div>
+        </div>
+        <p class="lc-login-art-title">云枢工作区</p>
       </div>
     </div>
   </main>

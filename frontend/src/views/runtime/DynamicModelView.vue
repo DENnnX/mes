@@ -2,7 +2,7 @@
   <div v-loading="loading" class="runtime-page">
     <!-- 顶部模型头部与视图工具 -->
     <header v-if="viewData.modelMeta" class="runtime-heading">
-      <h1>{{ pageTitle }}</h1>
+      <h1 class="lc-page-title">{{ pageTitle }}</h1>
       <div class="runtime-heading-tools">
         <el-button size="small" :icon="Download" @click="exportRuntimeCsv">导出表格</el-button>
         <el-button v-if="authStore.canAccessStudio" size="small" @click="openModelDesigner">字段设计</el-button>
@@ -86,6 +86,7 @@
         </div>
         <div class="runtime-grid-tools">
           <el-radio-group v-model="displayMode" size="small" aria-label="记录视图">
+            <el-radio-button v-if="hasWorkbench" value="workbench">执行视图</el-radio-button>
             <el-radio-button value="table">表格</el-radio-button>
             <el-radio-button value="cards">卡片</el-radio-button>
           </el-radio-group>
@@ -100,8 +101,43 @@
         </div>
       </div>
 
+      <div v-if="displayMode === 'workbench' && selectedRow" class="runtime-workbench">
+        <div class="runtime-workbench-list" role="group" aria-label="按记录查看执行进度">
+          <button
+            v-for="row in gridRows"
+            :key="row.id"
+            type="button"
+            :aria-pressed="selectedRow.id === row.id"
+            @click="selectedRecordId = row.id"
+          >
+            <strong>{{ recordTitle(row) }}</strong>
+            <el-tag v-if="workflowField && row[workflowField.name] != null" :type="getOptionTagColor(workflowField.name, row[workflowField.name])" size="small">
+              {{ getOptionTagLabel(workflowField.name, row[workflowField.name]) }}
+            </el-tag>
+          </button>
+        </div>
+        <section class="runtime-workbench-detail" v-loading="workbench.loading" aria-label="选中记录的执行进度">
+          <h2>{{ recordTitle(selectedRow) }}</h2>
+          <dl v-if="workbenchColumns.length" class="runtime-workbench-facts">
+            <div v-for="column in workbenchColumns" :key="column.name">
+              <dt>{{ fieldLabel(column) }}</dt><dd>{{ formatCardField(workbench.record || selectedRow, column) }}</dd>
+            </div>
+          </dl>
+          <RuntimeProgress v-if="workbenchProgress" :progress="workbenchProgress" :label="progressTab.header" />
+          <p v-else-if="!workbench.loading" class="runtime-workbench-hint">{{ workbench.error || '暂无工序执行记录' }}</p>
+          <el-button v-if="workbench.error" size="small" @click="previewRetry++">重新读取</el-button>
+          <div class="lc-page-actions runtime-workbench-actions">
+            <template v-for="btn in runtimeRowButtons" :key="btn.name">
+              <el-button v-if="isButtonPermitted(btn) && isRowButtonEnabled(btn, selectedRow)" :type="mapButtonType(btn.type)" size="small" @click="handleRowButton(btn, selectedRow)">
+                {{ btn.name }}
+              </el-button>
+            </template>
+          </div>
+        </section>
+      </div>
+
       <el-table
-        v-if="displayMode === 'table'"
+        v-else-if="displayMode === 'table'"
         class="runtime-table"
         :data="gridRows"
         :empty-text="loading ? '正在加载…' : '暂无匹配的记录'"
@@ -220,26 +256,59 @@
     />
 
     <!-- 自定义服务参数表单弹窗 -->
-    <el-dialog v-model="serviceParamsModal.visible" :title="serviceParamsModal.title" width="min(450px, calc(100vw - 24px))" destroy-on-close>
-      <el-form label-width="105px" size="small" @submit.prevent>
-        <el-form-item v-for="pf in serviceParamsModal.schema" :key="pf.name" :label="pf.displayName || pf.name" :required="pf.required">
-          <el-select v-if="pf.dataType === 'Selection' && pf.values" v-model="serviceParamsModal.values[pf.name]" style="width:100%;">
+    <el-dialog
+      v-model="serviceParamsModal.visible"
+      :title="serviceParamsModal.title"
+      width="min(450px, calc(100vw - 24px))"
+      :close-on-click-modal="!serviceParamsModal.submitting"
+      :close-on-press-escape="!serviceParamsModal.submitting"
+      :show-close="!serviceParamsModal.submitting"
+      destroy-on-close
+    >
+      <dl v-if="serviceRecordContext.length" class="runtime-service-context">
+        <div v-for="field in serviceRecordContext" :key="field.name">
+          <dt>{{ field.label }}</dt>
+          <dd>{{ field.value }}</dd>
+        </div>
+      </dl>
+      <div v-if="serviceParamsModal.submitting" class="runtime-service-feedback" :class="{ confirmed: serviceParamsModal.confirmed }" role="status">
+        <span>{{ serviceParamsModal.confirmed ? '已确认提交' : '正在提交' }}</span>
+      </div>
+      <el-form id="runtime-service-params" label-position="top" :disabled="serviceParamsModal.submitting" @submit.prevent="confirmServiceParamsRun">
+        <el-form-item
+          v-for="pf in serviceParamsModal.schema"
+          :key="pf.name"
+          :label="serviceFieldLabel(pf)"
+          :required="pf.required"
+        >
+          <el-select v-if="pf.dataType === 'Selection' && pf.values" v-model="serviceParamsModal.values[pf.name]" :aria-label="serviceFieldLabel(pf)" style="width:100%;">
             <el-option v-for="o in pf.values" :key="o.value" :label="o.label" :value="o.value" />
           </el-select>
           <el-input-number
             v-else-if="pf.dataType === 'Integer' || pf.dataType === 'Double'"
             v-model="serviceParamsModal.values[pf.name]"
+            :aria-label="serviceFieldLabel(pf)"
             :min="pf.minValue ?? -Infinity"
             :max="pf.maxValue ?? Infinity"
             :precision="pf.dataType === 'Integer' ? 0 : undefined"
             style="width:100%;"
           />
-          <el-input v-else v-model="serviceParamsModal.values[pf.name]" :type="pf.dataType === 'Text' ? 'textarea' : 'text'" />
+          <el-input
+            v-else
+            v-model="serviceParamsModal.values[pf.name]"
+            :aria-label="serviceFieldLabel(pf)"
+            :type="pf.dataType === 'Text' ? 'textarea' : 'text'"
+            :maxlength="pf.maxLength"
+            :show-word-limit="Boolean(pf.maxLength)"
+          />
         </el-form-item>
+        <p v-if="serviceParamsModal.error" class="runtime-service-error" role="alert">{{ serviceParamsModal.error }}</p>
       </el-form>
       <template #footer>
-        <el-button size="small" @click="serviceParamsModal.visible = false">取消</el-button>
-        <el-button type="primary" size="small" @click="confirmServiceParamsRun">确认执行</el-button>
+        <el-button :disabled="serviceParamsModal.submitting" @click="serviceParamsModal.visible = false">取消</el-button>
+        <el-button type="primary" native-type="submit" form="runtime-service-params" :loading="serviceParamsModal.submitting">
+          确认{{ serviceParamsModal.title }}
+        </el-button>
       </template>
     </el-dialog>
   </div>
@@ -257,6 +326,8 @@ import { useRuntimeFieldMeta } from '@/composables/useRuntimeFieldMeta';
 import { formatM2oCell, parseFileCell, formatCellValue, mapButtonType, evalEnableCondition } from '@/utils/formatters';
 import RecordDetailDrawer from '@/components/runtime/RecordDetailDrawer.vue';
 import RecordFormModal from '@/components/runtime/RecordFormModal.vue';
+import RuntimeProgress from '@/components/runtime/RuntimeProgress.vue';
+import { findProgressColumn, getRuntimeProgress } from '@/utils/runtimeProgress';
 
 const route = useRoute();
 const router = useRouter();
@@ -268,7 +339,11 @@ const compactViewport = window.matchMedia('(max-width: 780px)');
 const useCompactLayout = ref(compactViewport.matches);
 const selectedDisplayMode = ref('');
 const displayMode = computed({
-  get: () => selectedDisplayMode.value || (useCompactLayout.value ? 'cards' : 'table'),
+  get: () => {
+    const mode = selectedDisplayMode.value;
+    if (mode && (mode !== 'workbench' || hasWorkbench.value)) return mode;
+    return useCompactLayout.value ? 'cards' : hasWorkbench.value ? 'workbench' : 'table';
+  },
   set: (mode) => { selectedDisplayMode.value = mode; }
 });
 const visibleGridColumnNames = ref([]);
@@ -309,6 +384,9 @@ const pageTitle = computed(
 
 const searchValues = reactive({});
 const gridRows = ref([]);
+const selectedRecordId = ref(null);
+const previewRetry = ref(0);
+const workbench = reactive({ record: null, loading: false, error: '' });
 const gridTotal = ref(0);
 const page = ref(1);
 const pageSize = ref(10);
@@ -317,7 +395,9 @@ const lookupOptionsMap = reactive({});
 
 const detailDrawer = reactive({ visible: false, record: null });
 const formModal = reactive({ visible: false, mode: 'create', recordId: null });
-const serviceParamsModal = reactive({ visible: false, title: '', btn: null, row: null, schema: [], values: {} });
+const serviceParamsModal = reactive({
+  visible: false, title: '', btn: null, row: null, schema: [], values: {}, error: '', submitting: false, confirmed: false
+});
 
 const runtimeSearchColumns = computed(() => viewData.views?.search?.body?.columns || []);
 const runtimeGridColumns = computed(() => viewData.views?.grid?.body?.columns || []);
@@ -330,6 +410,9 @@ const runtimeGridTbar = computed(() => viewData.views?.grid?.body?.tbar || []);
 const runtimeRowButtons = computed(() => viewData.views?.grid?.body?.buttons || []);
 
 const {
+  formTabs,
+  identityField,
+  workflowField,
   getFieldMeta,
   getFieldDataType,
   isFieldSelectionOrDict,
@@ -342,6 +425,43 @@ const {
   getOptionTagLabel,
   getOptionTagColor
 } = useRuntimeFieldMeta(() => viewData);
+
+const progressTab = computed(() => formTabs.value.find(findProgressColumn));
+const hasWorkbench = computed(() => Boolean(progressTab.value && runtimeRowButtons.value.some(
+  (button) => button.action === 'preview' && isButtonPermitted(button)
+) && !runtimeGridTbar.value.some((button) => isButtonPermitted(button)
+  && (button.action === 'delete' || Object.values(button.args || {}).includes('$selectedIds'))
+)));
+const selectedRow = computed(() => gridRows.value.find((row) => row.id === selectedRecordId.value) || gridRows.value[0]);
+const workbenchColumns = computed(() => runtimeGridColumns.value.filter((column) =>
+  isFieldNumber(column.name) || isFieldManyToOne(column.name)
+).slice(0, 3));
+const workbenchProgress = computed(() => workbench.record && progressTab.value
+  ? getRuntimeProgress(progressTab.value, workbench.record, workbench.record[workflowField.value?.name])
+  : null);
+
+watch([selectedRow, displayMode, previewRetry], async ([row, mode], _previous, onCleanup) => {
+  workbench.record = null;
+  workbench.loading = false;
+  workbench.error = '';
+  if (mode !== 'workbench' || !row?.id || !activeModel.value) return;
+  let current = true;
+  onCleanup(() => { current = false; });
+  workbench.loading = true;
+  try {
+    const record = await rpcCall(activeModel.value, 'find', { id: row.id });
+    if (current) workbench.record = record;
+  } catch (e) {
+    if (current) workbench.error = e.message || '无法读取记录';
+  } finally {
+    if (current) workbench.loading = false;
+  }
+});
+
+function recordTitle(row) {
+  const identity = identityField.value || runtimeGridColumns.value[0];
+  return identity ? formatCardField(row, identity) : row.id;
+}
 
 const cardGridColumns = computed(() => {
   const columns = effectiveGridColumns.value;
@@ -363,6 +483,37 @@ function formatCardField(row, column) {
     return value.map((option) => getOptionTagLabel(column.name, option)).join('、');
   }
   return formatCellValue(value);
+}
+
+const serviceRecordContext = computed(() => {
+  const row = serviceParamsModal.row;
+  if (!row?.id) return [];
+  const columns = runtimeGridColumns.value;
+  const fields = new Map();
+  const identity = identityField.value;
+  const reference = columns.find((column) => isFieldManyToOne(column.name));
+
+  function addField(column, label = column && fieldLabel(column)) {
+    if (!column || fields.has(column.name)) return;
+    fields.set(column.name, { name: column.name, label, value: formatCardField(row, column) });
+  }
+
+  addField(reference);
+  addField(identity);
+  for (const parameter of serviceParamsModal.schema) {
+    if (!isFieldNumber(parameter.name)) continue;
+    const index = columns.findIndex((column) => column.name === parameter.name);
+    if (index < 0) continue;
+    const previous = columns[index - 1];
+    if (previous && isFieldNumber(previous.name)) addField(previous);
+    addField(columns[index], '当前' + fieldLabel(columns[index]));
+  }
+  return [...fields.values()];
+});
+
+function serviceFieldLabel(field) {
+  const label = field.displayName || field.name;
+  return serviceRecordContext.value.some((entry) => entry.name === field.name) ? '本次' + label : label;
 }
 
 function isButtonPermitted(btn) {
@@ -471,6 +622,7 @@ function resetLocalRuntimeState() {
     auth: {}
   });
   gridRows.value = [];
+  selectedRecordId.value = null;
   gridTotal.value = 0;
   selectedIds.value = [];
   Object.keys(searchValues).forEach((k) => delete searchValues[k]);
@@ -479,6 +631,9 @@ function resetLocalRuntimeState() {
   detailDrawer.record = null;
   formModal.visible = false;
   serviceParamsModal.visible = false;
+  serviceParamsModal.values = {};
+  serviceParamsModal.submitting = false;
+  serviceParamsModal.confirmed = false;
 }
 
 async function refreshAll() {
@@ -575,7 +730,7 @@ async function executeButtonRpc(btn, row, extraParams) {
   const targetModel = btn.model || activeModel.value;
   try {
     if (btn.confirm) await ElMessageBox.confirm(btn.confirm, btn.name, { type: 'warning' });
-    if (revision !== runtimeRevision) return;
+    if (revision !== runtimeRevision) return false;
     const resolvedArgs = {};
     for (const [key, value] of Object.entries(btn.args || {})) {
       if (value === '$selectedIds') {
@@ -595,11 +750,12 @@ async function executeButtonRpc(btn, row, extraParams) {
     }
     Object.assign(resolvedArgs, extraParams || {});
     const res = await rpcCall(targetModel, btn.service, resolvedArgs);
-    if (revision === runtimeRevision) {
-      await handleServiceUiResult(res, '操作 [' + btn.name + '] 成功', btn.actionAfter);
-    }
+    if (revision !== runtimeRevision) return false;
+    await handleServiceUiResult(res, '操作 [' + btn.name + '] 成功', btn.actionAfter);
+    return true;
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(e.message);
+    if (e === 'cancel' || e === 'close' || revision !== runtimeRevision) return false;
+    throw e;
   }
 }
 
@@ -610,22 +766,46 @@ async function invokeConfiguredButton(btn, row) {
     serviceParamsModal.row = row;
     serviceParamsModal.schema = btn.paramsForm;
     serviceParamsModal.values = {};
+    serviceParamsModal.error = '';
+    serviceParamsModal.submitting = false;
+    serviceParamsModal.confirmed = false;
     serviceParamsModal.visible = true;
     return;
   }
-  await executeButtonRpc(btn, row, {});
+  try {
+    await executeButtonRpc(btn, row, {});
+  } catch (e) {
+    ElMessage.error(e.message);
+  }
 }
 
 async function confirmServiceParamsRun() {
+  if (serviceParamsModal.submitting) return;
+  serviceParamsModal.error = '';
   const missing = serviceParamsModal.schema.find(
     (field) => field.required && String(serviceParamsModal.values[field.name] ?? '').trim() === ''
   );
   if (missing) {
-    ElMessage.warning('请填写' + (missing.displayName || missing.name));
+    serviceParamsModal.error = '请填写' + serviceFieldLabel(missing);
     return;
   }
-  serviceParamsModal.visible = false;
-  await executeButtonRpc(serviceParamsModal.btn, serviceParamsModal.row, serviceParamsModal.values);
+  const values = serviceParamsModal.values;
+  serviceParamsModal.submitting = true;
+  serviceParamsModal.confirmed = false;
+  try {
+    const saved = await executeButtonRpc(serviceParamsModal.btn, serviceParamsModal.row, values);
+    if (saved && values === serviceParamsModal.values) {
+      serviceParamsModal.confirmed = true;
+      if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        await new Promise((resolve) => window.setTimeout(resolve, 280));
+      }
+      if (values === serviceParamsModal.values) serviceParamsModal.visible = false;
+    }
+  } catch (e) {
+    if (values === serviceParamsModal.values) serviceParamsModal.error = e.message || '操作失败';
+  } finally {
+    if (values === serviceParamsModal.values) serviceParamsModal.submitting = false;
+  }
 }
 
 async function handleGridTbarButton(btn) {
@@ -710,11 +890,7 @@ watch(
   margin-bottom: 16px;
 }
 .runtime-heading h1 {
-  margin: 0;
   color: var(--text-main);
-  font-size: 24px;
-  font-weight: 650;
-  line-height: 1.25;
 }
 .runtime-heading-tools,
 .runtime-filter-actions,
@@ -770,6 +946,41 @@ watch(
 }
 .runtime-grid-summary strong { color: var(--text-main); }
 .runtime-columns { display: flex; flex-direction: column; gap: 4px; }
+.runtime-workbench {
+  display: grid;
+  grid-template-columns: minmax(180px, .85fr) minmax(0, 1.7fr);
+  gap: 14px;
+  align-items: start;
+  padding: 2px 16px 16px;
+}
+.runtime-workbench-list { display: grid; gap: 7px; max-height: 420px; overflow: auto; scrollbar-width: thin; }
+.runtime-workbench-list button {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 7px 12px;
+  padding: 11px 12px;
+  color: var(--text-main);
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-control);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--motion-standard), border-color var(--motion-standard);
+}
+.runtime-workbench-list button[aria-pressed="true"] { background: var(--primary-soft); border-color: var(--el-color-primary-light-5); }
+.runtime-workbench-list button:hover { border-color: var(--primary); }
+.runtime-workbench-list button:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.runtime-workbench-list strong { overflow-wrap: anywhere; }
+.runtime-workbench-detail { min-width: 0; padding: 16px; border: 1px solid var(--border-light); border-radius: var(--radius-panel); background: var(--bg-muted); }
+.runtime-workbench-detail h2 { margin: 0 0 10px; font-size: 20px; font-weight: 680; overflow-wrap: anywhere; }
+.runtime-workbench-facts { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 0 0 12px; }
+.runtime-workbench-facts dt { color: var(--text-muted); font-size: 12px; }
+.runtime-workbench-facts dd { margin: 2px 0 0; font-weight: 620; font-variant-numeric: tabular-nums; }
+.runtime-workbench-hint { margin: 0; padding: 12px 0; color: var(--text-muted); }
+.runtime-workbench-actions { margin-top: 12px; }
 .runtime-table {
   --el-table-border-color: var(--border-light);
   --el-table-header-bg-color: var(--bg-muted);
@@ -798,6 +1009,36 @@ watch(
 .runtime-card-actions:empty { display: none; }
 .runtime-empty { padding: 26px 16px; text-align: center; color: var(--text-muted); }
 .runtime-pagination { display: flex; justify-content: flex-end; padding: 8px 16px; }
+.runtime-service-context {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-control);
+  background: var(--bg-muted);
+}
+.runtime-service-context dt { margin-bottom: 3px; color: var(--text-muted); font-size: 12px; }
+.runtime-service-context dd { margin: 0; color: var(--text-main); font-weight: 600; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.runtime-service-error { margin: 0; color: var(--el-color-danger); line-height: 1.55; }
+.runtime-service-feedback {
+  display: grid;
+  gap: 5px;
+  margin: 0 0 12px;
+  color: var(--primary);
+  font-size: 12px;
+}
+.runtime-service-feedback::after {
+  content: "";
+  height: 3px;
+  background: var(--primary);
+  border-radius: 4px;
+  transform: scaleX(0);
+  transform-origin: left;
+}
+.runtime-service-feedback.confirmed::after { transform: scaleX(1); animation: runtime-confirmed var(--motion-standard) both; }
+@keyframes runtime-confirmed { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 
 @media (max-width: 780px) {
   .runtime-heading h1 { font-size: 21px; }
@@ -813,5 +1054,12 @@ watch(
   .runtime-table :deep(.el-table-fixed-column--right) { position: static !important; }
   .runtime-table :deep(.el-table-fixed-column--right::before) { display: none; }
   .runtime-grid-cards { grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); }
+  .runtime-workbench { grid-template-columns: minmax(0,1fr); padding: 2px 12px 12px; }
+  .runtime-workbench-list { max-height: 160px; }
+  .runtime-workbench-detail { padding: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .runtime-workbench-list button { transition: none; }
+  .runtime-service-feedback.confirmed::after { animation: none; }
 }
 </style>

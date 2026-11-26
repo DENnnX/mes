@@ -20,7 +20,7 @@
     <el-tabs v-model="iamSubTab" @tab-change="loadAllIam">
       <el-tab-pane label="租户与应用授权管理" name="tenants">
         <div class="lc-toolbar">
-          <span style="font-size:13px;color:#475569;">
+          <span style="font-size:13px;color:var(--text-muted);">
             {{ authStore.isSystemAdmin ? '创建企业租户并精确分配每个租户登录后能使用的应用范围。' : '为下属分站分配已获授权的应用，并管理分站开通状态。' }}
           </span>
           <el-button size="small" type="primary" :disabled="!authStore.canManageTenants" @click="openTenantDialog(null)">
@@ -71,7 +71,7 @@
       <el-tab-pane label="部门与登录账号" name="users_orgs">
         <div class="lc-toolbar">
           <div style="display:flex;gap:8px;align-items:center;">
-            <span style="font-size:12.5px;color:#475569;">所属租户：</span>
+            <span style="font-size:12.5px;color:var(--text-muted);">所属租户：</span>
             <el-select v-model="iamFilterTenant" clearable placeholder="全部可见租户" size="small" style="width:190px;" @change="loadOrgsAndUsers">
               <el-option v-for="t in appStore.tenantsList" :key="t.id" :label="t.name + ' (' + t.code + ')'" :value="t.id" />
             </el-select>
@@ -86,7 +86,7 @@
             <el-table :data="orgsList" border size="small">
               <el-table-column prop="name" label="部门节点" min-width="140">
                 <template #default="{ row }">
-                  <span v-if="row.parentId" style="color:#94a3b8;margin-right:4px;">└─</span><strong>{{ row.name }}</strong>
+                  <span v-if="row.parentId" style="color:var(--text-muted);margin-right:4px;">└─</span><strong>{{ row.name }}</strong>
                 </template>
               </el-table-column>
               <el-table-column label="操作" width="95">
@@ -121,7 +121,7 @@
 
       <el-tab-pane v-if="authStore.canManageTenants" label="角色与操作权限" name="roles">
         <div class="lc-toolbar">
-          <span style="font-size:12.5px;color:#475569;">按角色配置可访问的具体菜单、数据查看范围及可操作的数据表与功能按钮权限（系统内置角色仅只读展示）。</span>
+          <span style="font-size:12.5px;color:var(--text-muted);">按角色配置可访问的具体菜单、数据查看范围及可操作的数据表与功能按钮权限（系统内置角色仅只读展示）。</span>
           <el-button size="small" type="primary" :disabled="!authStore.canManageTenants" @click="openRoleDialog(null)">+ 新增角色</el-button>
         </div>
         <el-table :data="rolesList" border size="small">
@@ -187,34 +187,34 @@
         :closable="false"
         style="margin-bottom:12px;"
       />
-      <div v-if="authStore.isSystemAdmin" style="margin-bottom:10px;padding:8px 10px;background:#f8fafc;border-radius:6px;">
+      <div v-if="authStore.isSystemAdmin" style="margin-bottom:10px;padding:8px 10px;background:var(--bg-muted);border-radius:6px;">
         <el-checkbox v-model="authAppsDialog.allowAll">允许该租户使用全部应用与全部菜单（包括未来新建的应用）</el-checkbox>
       </div>
       <div v-if="!authAppsDialog.allowAll || !authStore.isSystemAdmin">
-        <div style="margin-bottom:10px;padding:8px 10px;background:#f8fafc;border-radius:6px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-          <span style="font-size:12.5px;font-weight:600;color:#334155;">菜单开放粒度：</span>
+        <div style="margin-bottom:10px;padding:8px 10px;background:var(--bg-muted);border-radius:6px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+          <span style="font-size:12.5px;font-weight:600;color:var(--text-regular);">菜单开放粒度：</span>
           <el-radio-group v-model="authAppsDialog.restrictMenus" size="small">
             <el-radio :value="false" :disabled="authStore.callerHasMenuRestriction">开放所选应用的全部激活菜单</el-radio>
             <el-radio :value="true">精细勾选指定菜单</el-radio>
           </el-radio-group>
         </div>
-        <div v-if="appStore.assignableApps.length === 0" style="color:#94a3b8;font-size:12.5px;padding:10px;">当前没有可分配的业务应用。</div>
+        <div v-if="appStore.assignableApps.length === 0" style="color:var(--text-muted);font-size:12.5px;padding:10px;">当前没有可分配的业务应用。</div>
         <el-checkbox-group v-else v-model="authAppsDialog.selected" @change="onAuthAppsSelectionChange" style="display:flex;flex-direction:column;gap:10px;padding:2px 4px;max-height:360px;overflow-y:auto;">
-          <div v-for="ap in appStore.assignableApps" :key="ap.name" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;background:#fff;">
+          <div v-for="ap in appStore.assignableApps" :key="ap.name" style="border:1px solid var(--border-light);border-radius:8px;padding:10px 12px;background:var(--bg-card);">
             <div style="display:flex;align-items:center;justify-content:space-between;">
               <el-checkbox :value="ap.name">
-                <strong>{{ ap.displayName }}</strong> <span style="color:#64748b;font-size:12px;">({{ ap.name }})</span>
+                <strong>{{ ap.displayName }}</strong> <span style="color:var(--text-muted);font-size:12px;">({{ ap.name }})</span>
               </el-checkbox>
               <div v-if="authAppsDialog.restrictMenus && authAppsDialog.selected.includes(ap.name) && appStore.getMenusForApp(ap.name).length > 0" style="display:flex;gap:8px;">
                 <el-button link type="primary" size="small" @click.stop="selectAllAppMenus(ap.name)">全选菜单</el-button>
                 <el-button link type="info" size="small" @click.stop="clearAppMenus(ap.name)">清空</el-button>
               </div>
             </div>
-            <div v-if="authAppsDialog.restrictMenus && authAppsDialog.selected.includes(ap.name)" style="margin:8px 0 0 22px;padding:8px 10px;background:#f8fafc;border-radius:6px;">
-              <div v-if="appStore.getMenusForApp(ap.name).length === 0" style="color:#94a3b8;font-size:12px;">该应用暂无可分配的激活菜单。</div>
+            <div v-if="authAppsDialog.restrictMenus && authAppsDialog.selected.includes(ap.name)" style="margin:8px 0 0 22px;padding:8px 10px;background:var(--bg-muted);border-radius:6px;">
+              <div v-if="appStore.getMenusForApp(ap.name).length === 0" style="color:var(--text-muted);font-size:12px;">该应用暂无可分配的激活菜单。</div>
               <el-checkbox-group v-else v-model="authAppsDialog.selectedMenus" style="display:flex;flex-wrap:wrap;gap:10px 18px;">
                 <el-checkbox v-for="mn in appStore.getMenusForApp(ap.name)" :key="mn.name" :value="mn.name">
-                  {{ mn.displayName }} <span style="color:#94a3b8;font-size:11px;">({{ mn.model }})</span>
+                  {{ mn.displayName }} <span style="color:var(--text-muted);font-size:11px;">({{ mn.model }})</span>
                 </el-checkbox>
               </el-checkbox-group>
             </div>
@@ -316,10 +316,10 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <div v-if="roleDialog.restrictMenus" class="lc-perm-group" style="margin-bottom:10px;background:#fffbeb;border-color:#fde68a;">
-          <div style="font-weight:600;font-size:12.5px;margin-bottom:6px;color:#92400e;">勾选允许该角色看到的导航菜单（未勾选菜单隐藏且禁止直接打开）</div>
+        <div v-if="roleDialog.restrictMenus" class="lc-perm-group" style="margin-bottom:10px;background:var(--el-color-warning-light-9);border-color:var(--el-color-warning-light-8);">
+          <div style="font-weight:600;font-size:12.5px;margin-bottom:6px;color:var(--el-color-warning);">勾选允许该角色看到的导航菜单（未勾选菜单隐藏且禁止直接打开）</div>
           <div v-for="grp in appStore.assignableMenuGroups" :key="grp.appName" style="margin-bottom:6px;">
-            <div style="font-size:12px;color:#475569;font-weight:600;margin-bottom:4px;">{{ grp.appDisplayName }}</div>
+            <div style="font-size:12px;color:var(--text-muted);font-weight:600;margin-bottom:4px;">{{ grp.appDisplayName }}</div>
             <el-checkbox-group v-model="roleDialog.form.allowedMenus">
               <el-checkbox v-for="mn in grp.menus" :key="mn.name" :value="mn.name" style="margin-right:14px;">{{ mn.displayName }}</el-checkbox>
             </el-checkbox-group>

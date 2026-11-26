@@ -37,7 +37,7 @@
         </el-tag>
 
         <el-select v-model="appStore.themeName" size="small" aria-label="界面配色" style="width:86px;" @change="appStore.applyTheme">
-          <el-option value="indigo" label="石墨青" />
+          <el-option value="indigo" label="工业青" />
           <el-option value="crimson" label="赤陶" />
           <el-option value="slate" label="钢蓝" />
         </el-select>
@@ -65,7 +65,7 @@
     <div class="lc-body">
       <!-- 左侧导航栏 -->
       <button v-if="sidebarOpen" class="lc-sidebar-scrim" type="button" aria-label="收起导航" @click="closeSidebar" />
-      <aside id="lc-navigation" class="lc-sidebar" :class="{ 'is-open': sidebarOpen }" @keydown.esc.stop="closeSidebar">
+      <nav id="lc-navigation" ref="navigation" class="lc-sidebar" aria-label="工作区导航" :class="{ 'is-open': sidebarOpen }" @keydown.esc.stop="closeSidebar">
         <template v-if="appStore.workspaceMode === 'studio' && authStore.canAccessStudio">
           <div class="lc-side-section">工作台</div>
           <div class="lc-side-scroll">
@@ -136,7 +136,7 @@
                 class="lc-nav-item"
                 :class="{ active: activeRuntimeMenu === node.name }"
                 :aria-current="activeRuntimeMenu === node.name ? 'page' : undefined"
-                :style="{ paddingLeft: 14 + depth * 12 + 'px' }"
+              :style="{ '--nav-indent': 10 + depth * 11 + 'px' }"
                 @click="openRuntimeMenu(node)"
               >
                 <el-icon><Document /></el-icon>
@@ -145,7 +145,7 @@
               <div
                 v-else
                 class="lc-nav-group-title"
-                :style="{ paddingLeft: 14 + depth * 12 + 'px' }"
+                :style="{ '--nav-indent': 10 + depth * 11 + 'px' }"
               >
                 <el-icon><FolderOpened /></el-icon>
                 <span>{{ node.displayName }}</span>
@@ -153,7 +153,7 @@
             </template>
           </div>
         </template>
-      </aside>
+      </nav>
 
       <div class="lc-workspace">
         <nav v-if="appStore.openTabs.length > 0" class="lc-tabsbar" aria-label="已打开的页面">
@@ -176,7 +176,7 @@
     <ModelDesignerModal />
 
     <!-- 修改个人密码弹窗 -->
-    <el-dialog v-model="changePwdDialog.visible" title="修改个人登录密码" width="420px" destroy-on-close>
+    <el-dialog v-model="changePwdDialog.visible" title="修改个人登录密码" width="min(420px, calc(100vw - 24px))" destroy-on-close>
       <el-form label-width="95px" size="small">
         <el-form-item label="当前密码" required>
           <el-input v-model="changePwdDialog.oldPassword" type="password" show-password />
@@ -197,7 +197,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useAuthStore } from '@/stores/auth';
@@ -210,8 +210,18 @@ const authStore = useAuthStore();
 const appStore = useAppStore();
 const sidebarOpen = ref(false);
 const menuToggle = ref(null);
+const navigation = ref(null);
 
 watch(() => route.path, () => { sidebarOpen.value = false; });
+watch(
+  () => [route.path, appStore.menuLoaded, sidebarOpen.value],
+  async () => {
+    await nextTick();
+    if (!navigation.value?.getClientRects().length) return;
+    navigation.value.querySelector('.lc-nav-item.active')?.scrollIntoView({ block: 'nearest' });
+  },
+  { immediate: true }
+);
 
 function closeSidebar() {
   if (!sidebarOpen.value) return;

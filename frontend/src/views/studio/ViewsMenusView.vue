@@ -65,7 +65,7 @@
       <el-tabs v-model="viewEditor.designTab" @tab-change="onViewEditorTabChange">
         <el-tab-pane label="可视化布局调整" name="visual">
           <div style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
-            <span style="font-size:12.5px;color:#475569;">勾选要显示的字段，调整显示名称、宽度与顺序：</span>
+            <span style="font-size:12.5px;color:var(--text-muted);">勾选要显示的字段，调整显示名称、宽度与顺序：</span>
             <el-button size="small" @click="addVisualColumn">+ 手动加列</el-button>
           </div>
           <el-table :data="viewEditor.visualColumns" border size="small" max-height="290">

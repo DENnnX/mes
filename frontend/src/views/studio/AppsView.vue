@@ -20,10 +20,10 @@
         <el-table-column prop="version" label="版本" width="80" />
         <el-table-column label="已授权租户" min-width="200">
           <template #default="{ row }">
-            <span v-if="row.name === 'platform_kernel'" style="color:#64748b;font-size:12px;">系统底座</span>
+            <span v-if="row.name === 'platform_kernel'" style="color:var(--text-muted);font-size:12px;">系统底座</span>
             <template v-else>
               <el-tag v-for="tn in appStore.getTenantsForApp(row.name)" :key="tn.id" size="small" type="success" style="margin-right:4px;">{{ tn.name }}</el-tag>
-              <span v-if="appStore.getTenantsForApp(row.name).length === 0" style="color:#94a3b8;font-size:12px;">暂未分配给独立租户</span>
+              <span v-if="appStore.getTenantsForApp(row.name).length === 0" style="color:var(--text-muted);font-size:12px;">暂未分配给独立租户</span>
             </template>
           </template>
         </el-table-column>
@@ -42,12 +42,12 @@
             <strong style="font-size:15px;">{{ a.displayName }}</strong>
             <el-tag size="small">{{ a.version }}</el-tag>
           </div>
-          <div style="font-size:12px;color:#64748b;margin:6px 0;">编码：{{ a.name }} · 分类：{{ a.category }}</div>
-          <div style="font-size:12.5px;color:#334155;min-height:36px;">{{ a.description || '暂无描述' }}</div>
+          <div style="font-size:12px;color:var(--text-muted);margin:6px 0;">编码：{{ a.name }} · 分类：{{ a.category }}</div>
+          <div style="font-size:12.5px;color:var(--text-regular);min-height:36px;">{{ a.description || '暂无描述' }}</div>
           <div v-if="a.name !== 'platform_kernel'" style="margin:8px 0;">
-            <span style="font-size:11.5px;color:#64748b;">授权租户：</span>
+            <span style="font-size:11.5px;color:var(--text-muted);">授权租户：</span>
             <el-tag v-for="tn in appStore.getTenantsForApp(a.name)" :key="tn.id" size="small" type="success" style="margin-right:4px;">{{ tn.name }}</el-tag>
-            <span v-if="appStore.getTenantsForApp(a.name).length === 0" style="color:#94a3b8;font-size:11.5px;">未授权</span>
+            <span v-if="appStore.getTenantsForApp(a.name).length === 0" style="color:var(--text-muted);font-size:11.5px;">未授权</span>
           </div>
           <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
             <el-button v-if="a.name !== 'platform_kernel'" size="small" type="primary" plain @click="jumpToAppAndSwitch(a.name)">打开使用</el-button>

@@ -108,6 +108,18 @@ public class LowCodePlatformIntegrationTests {
     }
 
     @Test
+    void testFrontendEntryIsNeverCached() {
+        for (String entryPath : List.of("/", "/index.html")) {
+            restClient.get().uri(entryPath)
+                    .headers(headers -> headers.setIfModifiedSince(System.currentTimeMillis() + 60_000))
+                    .exchange()
+                    .expectStatus().isOk()
+                    .expectHeader().valueEquals(HttpHeaders.CACHE_CONTROL, "no-store")
+                    .expectBody(String.class).value(html -> assertThat(html).contains("id=\"app\""));
+        }
+    }
+
+    @Test
     @Order(1)
     void testHealthAuthAndPureBootstrapMenus() {
         restClient.get().uri("/api/health").exchange()

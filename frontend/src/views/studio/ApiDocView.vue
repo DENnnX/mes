@@ -6,10 +6,10 @@
     </div>
     <el-row :gutter="14">
       <el-col :span="8">
-        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;max-height:540px;overflow-y:auto;">
+        <div style="border:1px solid var(--border-light);border-radius:8px;padding:10px;max-height:540px;overflow-y:auto;">
           <div v-for="cat in apiCatalog" :key="cat.category" style="margin-bottom:10px;">
             <div
-              style="font-size:12.5px;font-weight:700;color:#0f172a;padding:4px 6px;background:#f1f5f9;border-radius:5px;cursor:pointer;"
+              style="font-size:12.5px;font-weight:700;color:var(--text-main);padding:4px 6px;background:var(--bg-muted);border-radius:5px;cursor:pointer;"
               @click="cat.modelName ? inspectApiModel(cat.modelName) : (activeApiCategory = cat)"
             >
               {{ cat.title }}
@@ -17,7 +17,7 @@
             <div
               v-for="ep in (cat.endpoints || [])"
               :key="ep.rpcMethod"
-              style="font-size:12px;padding:4px 8px;cursor:pointer;color:#334155;"
+              style="font-size:12px;padding:4px 8px;cursor:pointer;color:var(--text-regular);"
               @click="selectApiEndpoint(cat, ep)"
             >
               <code>{{ ep.rpcMethod }}</code>
@@ -45,11 +45,11 @@
             </el-table-column>
           </el-table>
         </div>
-        <div v-if="selectedApiEndpoint" style="border:1px solid #e2e8f0;border-radius:8px;padding:12px;background:#f8fafc;">
+        <div v-if="selectedApiEndpoint" style="border:1px solid var(--border-light);border-radius:8px;padding:12px;background:var(--bg-muted);">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
             <div>
               <strong>{{ selectedApiEndpoint.rpcMethod }}</strong>
-              <span style="font-size:12px;color:#64748b;margin-left:8px;">{{ selectedApiEndpoint.summary }}</span>
+              <span style="font-size:12px;color:var(--text-muted);margin-left:8px;">{{ selectedApiEndpoint.summary }}</span>
             </div>
             <el-button size="small" type="primary" @click="tryEndpointInConsole(selectedApiEndpoint)">在调试工具中试调</el-button>
           </div>
