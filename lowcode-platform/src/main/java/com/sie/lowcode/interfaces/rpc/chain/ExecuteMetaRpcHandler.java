@@ -10,6 +10,7 @@ import com.sie.lowcode.infrastructure.persistence.sqlite.SqliteUiSchemaRepositor
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -189,7 +190,7 @@ public class ExecuteMetaRpcHandler implements RpcHandler {
             }
         }
         if ("ui_view".equals(model) && "loadView".equals(service)) {
-            return uiSchemaAppService.loadView(str(args.get("model")), str(args.get("type")));
+            return uiSchemaAppService.loadView(str(args.get("model")), str(args.get("type")), str(args.get("menu")));
         }
 
         // 3. 在线编辑视图与菜单定义（Dev Center 能力）
@@ -225,6 +226,10 @@ public class ExecuteMetaRpcHandler implements RpcHandler {
 
         // 4. 所有已注册模型（含自举 meta_app / meta_model / 用户自定义模型）统一通过 MetaContext.get(model).call(service, args) 派发
         MetaContext meta = ctx.getMetaContext();
+        if (args.containsKey("_skipValidate")) {
+            args = new LinkedHashMap<>(args);
+            args.remove("_skipValidate");
+        }
         return meta.get(model).call(service, args);
     }
 

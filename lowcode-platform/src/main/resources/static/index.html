@@ -369,23 +369,16 @@
               <div v-if="menuTree.length === 0" style="padding: 14px 16px; color: #94a3b8; font-size: 12.5px; line-height: 1.6;">
                 当前空间下暂无可用业务页面。请创建并启用应用页面，或联系管理员开通授权。
               </div>
-              <template v-for="group in menuTree" :key="group.name">
-                <div v-if="group.model" class="lc-nav-item" :class="{active: activeRuntimeModel === group.model}" @click="openRuntimeModel(group.model, group.view, group.displayName)">
+              <template v-for="{ node, depth } in runtimeNavigation" :key="node.name">
+                <div v-if="node.routePath" class="lc-nav-item" :class="{active: activeRuntimeMenu === node.name}"
+                     :style="{ paddingLeft: (14 + depth * 12) + 'px' }" @click="openRuntimeMenu(node)">
                   <el-icon><Document /></el-icon>
-                  <span>{{ group.displayName }}</span>
+                  <span>{{ node.displayName }}</span>
                 </div>
-                <template v-else>
-                  <div class="lc-nav-group-title">
-                    <el-icon><FolderOpened /></el-icon>
-                    <span>{{ group.displayName }}</span>
-                  </div>
-                  <div v-for="child in (group.children || [])" :key="child.name"
-                       class="lc-nav-item" :class="{active: activeRuntimeModel === child.model}"
-                       @click="openRuntimeModel(child.model, child.view, child.displayName)">
-                    <el-icon><Document /></el-icon>
-                    <span>{{ child.displayName }}</span>
-                  </div>
-                </template>
+                <div v-else class="lc-nav-group-title" :style="{ paddingLeft: (14 + depth * 12) + 'px' }">
+                  <el-icon><FolderOpened /></el-icon>
+                  <span>{{ node.displayName }}</span>
+                </div>
               </template>
             </div>
           </template>
@@ -1041,7 +1034,7 @@
                 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
                   <div>
                     <h2 style="margin:0;font-size:17px;color:#0f172a;">
-                      {{ runtimeViewData.modelMeta?.displayName || activeRuntimeModel }}
+                      {{ runtimePageTitle }}
                       <el-tag size="small" type="success" style="margin-left:8px;">v{{ runtimeViewData.modelMeta?.versionNo }}</el-tag>
                       <el-tag v-if="runtimeViewData.auth?.create" size="small" effect="plain" style="margin-left:6px;">可录入</el-tag>
                       <el-tag v-if="runtimeViewData.auth?.update" size="small" effect="plain" style="margin-left:4px;">可修改</el-tag>
@@ -1277,13 +1270,19 @@
                     <template #default="{ row }">
                       <el-input-number v-if="cc.dataType === 'Integer' || cc.dataType === 'Double' || cc.dataType === 'Decimal'" v-model="row[cc.name]" size="small" controls-position="right" style="width:100%;" @change="markChildDirty(row)"></el-input-number>
                       <el-switch v-else-if="cc.dataType === 'Boolean'" v-model="row[cc.name]" @change="markChildDirty(row)"></el-switch>
+                      <el-select v-else-if="cc.dataType === 'ManyToOne'" v-model="row[cc.name]" filterable clearable remote
+                                 :remote-method="kw => fetchChildLookup(tab, cc.name, kw)"
+                                 @visible-change="visible => { if (visible) fetchChildLookup(tab, cc.name, ''); }"
+                                 @change="markChildDirty(row)" style="width:100%;">
+                        <el-option v-for="opt in childLookupOptions(tab, cc.name)" :key="opt.value" :label="opt.label" :value="opt.value"></el-option>
+                      </el-select>
                       <el-input v-else v-model="row[cc.name]" size="small" @change="markChildDirty(row)"></el-input>
                     </template>
                   </el-table-column>
                   <el-table-column label="操作" width="120">
-                    <template #default="{ row, $index }">
+                    <template #default="{ row }">
                       <el-button link type="primary" size="small" @click="openChildEditModal(tab, row)">详情编辑</el-button>
-                      <el-button link type="danger" size="small" @click="removeChildRow(tab, row, $index)">删</el-button>
+                      <el-button link type="danger" size="small" @click="removeChildRow(tab, row)">删</el-button>
                     </template>
                   </el-table-column>
                 </el-table>
@@ -1519,6 +1518,12 @@
           <el-form-item v-for="cc in childEditModal.columns" :key="cc.name" :label="cc.displayName || cc.name">
             <el-input-number v-if="cc.dataType === 'Integer' || cc.dataType === 'Double' || cc.dataType === 'Decimal'" v-model="childEditModal.row[cc.name]" style="width:100%;"></el-input-number>
             <el-switch v-else-if="cc.dataType === 'Boolean'" v-model="childEditModal.row[cc.name]"></el-switch>
+            <el-select v-else-if="cc.dataType === 'ManyToOne'" v-model="childEditModal.row[cc.name]" filterable clearable remote
+                       :remote-method="kw => fetchChildLookup(childEditModal.tab, cc.name, kw)"
+                       @visible-change="visible => { if (visible) fetchChildLookup(childEditModal.tab, cc.name, ''); }"
+                       style="width:100%;">
+              <el-option v-for="opt in childLookupOptions(childEditModal.tab, cc.name)" :key="opt.value" :label="opt.label" :value="opt.value"></el-option>
+            </el-select>
             <el-input v-else v-model="childEditModal.row[cc.name]"></el-input>
           </el-form-item>
         </el-form>
@@ -1680,7 +1685,7 @@
   </script>
 
   <script>
-    const { createApp, reactive, ref, computed, onMounted } = Vue;
+    const { createApp, reactive, ref, computed, onMounted, onUnmounted } = Vue;
     const { ElMessage, ElMessageBox } = ElementPlus;
 
     const app = createApp({
@@ -1711,6 +1716,17 @@
         const showKernelModels = ref(false);
         const publishTimeline = ref([]);
         const menuTree = ref([]);
+        const runtimeNavigation = computed(() => {
+          const entries = [];
+          function visit(nodes, depth) {
+            for (const node of nodes) {
+              entries.push({ node, depth });
+              visit(node.children || [], depth + 1);
+            }
+          }
+          visit(menuTree.value, 0);
+          return entries;
+        });
         const viewsList = ref([]);
         const menusFlatList = ref([]);
         const filterViewModel = ref('');
@@ -1752,11 +1768,15 @@
         const importingPkg = ref(false);
 
         const activeRuntimeModel = ref('');
-        const activeRuntimeViewsCsv = ref('');
+        const activeRuntimeMenu = ref('');
+        let runtimeRevision = 0;
+        let runtimePageConfig = null;
         const runtimeLoading = ref(false);
         const runtimeDisplayMode = ref('table');
         const visibleGridColumnNames = ref([]);
         const runtimeViewData = reactive({ modelMeta: null, views: {}, fields: {}, dictOptions: {}, dynamicOptions: {}, services: [], auth: {} });
+        const runtimePageTitle = computed(() => runtimeNavigation.value.find(({ node }) => node.name === activeRuntimeMenu.value)?.node.displayName
+          || runtimeViewData.modelMeta?.displayName || activeRuntimeModel.value);
         const runtimeSearchValues = reactive({});
         const runtimeGridRows = ref([]);
         const runtimeGridTotal = ref(0);
@@ -1816,16 +1836,16 @@
           else document.documentElement.setAttribute('data-theme', themeName.value);
         }
 
-        function ensureTab(id, title, mode, key, viewCsv = '') {
+        function ensureTab(id, title, mode, key) {
           const idx = openTabs.value.findIndex(x => x.id === id);
-          if (idx === -1) openTabs.value.push({ id, title, mode, key, viewCsv });
+          if (idx === -1) openTabs.value.push({ id, title, mode, key });
           else openTabs.value[idx].title = title;
           activeTabId.value = id;
         }
         function activateTab(tab) {
           activeTabId.value = tab.id;
           if (tab.mode === 'studio') goToStudioTab(tab.key);
-          else openRuntimeModel(tab.key, tab.viewCsv, tab.title);
+          else navigateTo(tab.key);
         }
         function closeTab(id) {
           const idx = openTabs.value.findIndex(x => x.id === id);
@@ -1879,21 +1899,7 @@
 
         async function routeAfterLogin() {
           await loadMenuTree();
-          if (currentUser.value?.canAccessStudio) {
-            workspaceMode.value = 'studio';
-            switchStudioTab('overview');
-            await refreshMenusAndOverview();
-          } else if (currentUser.value?.canManageTenants) {
-            workspaceMode.value = 'tenant_admin';
-            studioTab.value = 'iam';
-            openTabs.value = [];
-            window.location.hash = '#/tenant-admin';
-            await loadAllIam();
-          } else {
-            workspaceMode.value = 'runtime';
-            activeRuntimeModel.value = '';
-            window.location.hash = '#/runtime';
-          }
+          await applyWorkspaceRoute();
         }
 
         async function handleUserMenuCommand(cmd) {
@@ -1905,11 +1911,12 @@
             token.value = '';
             currentUser.value = null;
             openTabs.value = [];
-            activeRuntimeModel.value = '';
+            menuTree.value = [];
+            clearRuntimePage();
             loginError.value = '';
             loginForm.password = '';
             localStorage.removeItem('lc_token');
-            window.location.hash = '#/login';
+            history.replaceState(null, '', '#/login');
             await loadPublicApps();
             ElMessage.info('已安全退出登录');
           }
@@ -2012,48 +2019,38 @@
           iam: '租户与应用授权', dict: '常用选项字典', code_rule: '自动编号规则', governance: '停用与安全清理',
           api_doc: '开放接口文档', rpc_console: '接口调试工具'
         };
-        function switchStudioTab(tab) {
-          if (currentUser.value?.canAccessStudio) {
-            studioTab.value = tab; window.location.hash = '#/studio/' + tab;
-            ensureTab('studio:' + tab, STUDIO_TITLES[tab] || tab, 'studio', tab);
-            if (tab === 'overview') { loadStudioOverview(); loadPublishTimeline(); }
-            if (tab === 'views_menus') loadViewsAndMenus();
-            if (tab === 'governance') loadGovernanceLists();
-            if (tab === 'dict') loadDictTypes();
-            if (tab === 'code_rule') loadCodeRules();
-            if (tab === 'iam') loadAllIam();
-            if (tab === 'api_doc') loadApiCatalog();
-          } else if (currentUser.value?.canManageTenants) {
-            studioTab.value = 'iam'; window.location.hash = '#/tenant-admin'; loadAllIam();
-          }
+        function showStudioTab(tab) {
+          workspaceMode.value = 'studio';
+          studioTab.value = tab;
+          ensureTab('studio:' + tab, STUDIO_TITLES[tab], 'studio', tab);
+          if (tab === 'overview') { loadStudioOverview(); loadPublishTimeline(); }
+          if (tab === 'apps' || tab === 'models') loadStudioOverview();
+          if (tab === 'views_menus') loadViewsAndMenus();
+          if (tab === 'governance') loadGovernanceLists();
+          if (tab === 'dict') loadDictTypes();
+          if (tab === 'code_rule') loadCodeRules();
+          if (tab === 'iam') loadAllIam();
+          if (tab === 'api_doc') loadApiCatalog();
         }
-        function goToStudioTab(tab) { if (!currentUser.value?.canAccessStudio) return; workspaceMode.value = 'studio'; switchStudioTab(tab); }
-        function goToRuntimeHome() { activeRuntimeModel.value = ''; window.location.hash = '#/runtime'; }
+        function switchStudioTab(tab) { return navigateTo('/studio/' + tab); }
+        function goToStudioTab(tab) { return switchStudioTab(tab); }
+        function goToRuntimeHome() { return navigateTo('/runtime'); }
         async function onWorkspaceChange(mode) {
-          workspaceMode.value = mode;
           if (mode === 'runtime') {
             await loadMenuTree();
             try { currentUser.value = await rpcCall('rbac_user', 'profile', {}); } catch (e) {}
-            activeRuntimeModel.value = '';
-            window.location.hash = '#/runtime';
+            await goToRuntimeHome();
           } else if (mode === 'tenant_admin') {
-            studioTab.value = 'iam'; openTabs.value = []; window.location.hash = '#/tenant-admin'; await loadAllIam();
-          } else { switchStudioTab(studioTab.value); await loadStudioOverview(); }
-        }
-        function findFirstLeafModel(nodes, targetApp = null) {
-          for (const n of nodes || []) {
-            if (n.model && (!targetApp || n.appName === targetApp)) return n;
-            if (n.children && n.children.length) { const f = findFirstLeafModel(n.children, targetApp); if (f) return f; }
-          }
-          return null;
+            await navigateTo('/tenant-admin');
+          } else await switchStudioTab(studioTab.value);
         }
         async function jumpToAppFirstMenu(appName) {
           await loadMenuTree();
-          const leaf = findFirstLeafModel(menuTree.value, appName);
-          if (leaf) await openRuntimeModel(leaf.model, leaf.view, leaf.displayName);
-          else { activeRuntimeModel.value = ''; ElMessage.info('应用 [' + resolveAppDisplayName(appName) + '] 暂未生成菜单页面，可先在管理中心创建数据表'); }
+          const entry = runtimeNavigation.value.find(({ node }) => node.routePath && node.appName === appName);
+          if (entry) await openRuntimeMenu(entry.node);
+          else { await goToRuntimeHome(); ElMessage.info('应用 [' + resolveAppDisplayName(appName) + '] 暂未生成菜单页面，可先在管理中心创建数据表'); }
         }
-        async function jumpToAppAndSwitch(appName) { workspaceMode.value = 'runtime'; await jumpToAppFirstMenu(appName); }
+        function jumpToAppAndSwitch(appName) { return jumpToAppFirstMenu(appName); }
 
         // ==================== 应用管理与可视化页面编排 ====================
         function openNewAppDialog() {
@@ -2431,27 +2428,101 @@
         }
 
         // ==================== 动态应用页面渲染 ====================
-        function jumpToRuntimeModel(modelName) { openRuntimeModel(modelName, ''); }
-        async function openRuntimeModel(modelName, viewKeysCsv = '', titleHint = '') {
-          if (!modelName) return;
-          workspaceMode.value = 'runtime'; activeRuntimeModel.value = modelName; activeRuntimeViewsCsv.value = viewKeysCsv || '';
-          window.location.hash = '#/m/' + modelName; Object.keys(runtimeSearchValues).forEach(k => delete runtimeSearchValues[k]); runtimeSelectedIds.value = [];
-          await refreshRuntimeAll(titleHint);
+        function navigateTo(path, replace = false) {
+          const hash = '#' + path;
+          if (window.location.hash !== hash) {
+            if (replace) history.replaceState(null, '', hash);
+            else history.pushState(null, '', hash);
+          }
+          return applyWorkspaceRoute();
         }
-        async function refreshRuntimeAll(titleHint = '') {
+        function openRuntimeMenu(menu) { return navigateTo(menu.routePath); }
+        function jumpToRuntimeModel(modelName) { return navigateTo('/m/' + encodeURIComponent(modelName)); }
+
+        async function applyWorkspaceRoute() {
+          if (!currentUser.value) return;
+          const path = window.location.hash.slice(1).split('?')[0];
+          const entry = runtimeNavigation.value.find(({ node }) => node.routePath === path);
+          if (entry) {
+            const menu = entry.node;
+            await showRuntimePage({ path, model: menu.model, menu: menu.name, title: menu.displayName });
+            return;
+          }
+          if (path.startsWith('/m/')) {
+            const model = path.slice(3);
+            const legacy = runtimeNavigation.value.find(({ node }) => node.routePath && node.model === model);
+            if (legacy) return navigateTo(legacy.node.routePath, true);
+            if (currentUser.value.canAccessStudio && /^[a-z][a-z0-9_]*$/.test(model)) {
+              await showRuntimePage({ path, model });
+              return;
+            }
+          }
+          if (path.startsWith('/menu/') || path.startsWith('/m/')) {
+            ElMessage.warning('页面不存在或未授权');
+            return navigateTo('/runtime', true);
+          }
+
+          clearRuntimePage();
+          if (path === '/runtime') {
+            workspaceMode.value = 'runtime';
+            activeTabId.value = '';
+          } else if (path === '/tenant-admin' && currentUser.value.canManageTenants) {
+            workspaceMode.value = 'tenant_admin';
+            studioTab.value = 'iam';
+            activeTabId.value = '';
+            await loadAllIam();
+          } else if (path.startsWith('/studio/') && currentUser.value.canAccessStudio
+                     && Object.hasOwn(STUDIO_TITLES, path.slice(8))) {
+            showStudioTab(path.slice(8));
+          } else {
+            const defaultPath = currentUser.value.canAccessStudio ? '/studio/overview'
+              : currentUser.value.canManageTenants ? '/tenant-admin' : '/runtime';
+            return navigateTo(defaultPath, true);
+          }
+        }
+        function clearRuntimePage() {
+          runtimeRevision++;
+          runtimePageConfig = null;
+          activeRuntimeModel.value = '';
+          activeRuntimeMenu.value = '';
+          runtimeLoading.value = false;
+          Object.assign(runtimeViewData, { modelMeta: null, views: {}, fields: {}, dictOptions: {}, dynamicOptions: {}, services: [], auth: {} });
+          runtimeGridRows.value = [];
+          runtimeGridTotal.value = 0;
+          runtimeSelectedIds.value = [];
+          Object.keys(runtimeSearchValues).forEach(key => delete runtimeSearchValues[key]);
+          Object.keys(lookupOptionsMap).forEach(key => delete lookupOptionsMap[key]);
+          detailDrawer.visible = runtimeFormModal.visible = childEditModal.visible = addErModal.visible = serviceParamsModal.visible = false;
+        }
+        async function showRuntimePage(page) {
+          clearRuntimePage();
+          runtimePageConfig = page;
+          workspaceMode.value = 'runtime';
+          activeRuntimeModel.value = page.model;
+          activeRuntimeMenu.value = page.menu || '';
+          await refreshRuntimeAll();
+        }
+        async function refreshRuntimeAll() {
+          if (!runtimePageConfig) return;
+          const page = runtimePageConfig;
+          const revision = ++runtimeRevision;
           runtimeLoading.value = true;
           try {
-            const data = await rpcCall('ui_view', 'loadView', { model: activeRuntimeModel.value, type: activeRuntimeViewsCsv.value });
+            const args = { model: page.model };
+            if (page.menu) args.menu = page.menu;
+            const data = await rpcCall('ui_view', 'loadView', args);
+            if (revision !== runtimeRevision) return;
             runtimeViewData.modelMeta = data.modelMeta; runtimeViewData.views = data.views || {}; runtimeViewData.fields = data.fields || {};
             runtimeViewData.dictOptions = data.dictOptions || {}; runtimeViewData.dynamicOptions = data.dynamicOptions || {};
             runtimeViewData.services = data.services || []; runtimeViewData.auth = data.auth || {};
             visibleGridColumnNames.value = (data.views?.grid?.body?.columns || []).map(c => c.name);
-            ensureTab('m:' + activeRuntimeModel.value, titleHint || data.modelMeta?.displayName || activeRuntimeModel.value, 'runtime', activeRuntimeModel.value, activeRuntimeViewsCsv.value);
+            ensureTab(page.path, page.title || data.modelMeta?.displayName || page.model, 'runtime', page.path);
             await executeRuntimeSearch(0);
           } catch (e) {
-            runtimeViewData.modelMeta = null; runtimeViewData.views = {}; runtimeGridRows.value = []; runtimeGridTotal.value = 0;
+            if (revision !== runtimeRevision) return;
             ElMessage.error('无法打开页面：' + e.message);
-          } finally { runtimeLoading.value = false; }
+            await navigateTo('/runtime', true);
+          } finally { if (revision === runtimeRevision) runtimeLoading.value = false; }
         }
 
         const runtimeSearchColumns = computed(() => runtimeViewData.views?.search?.body?.columns || []);
@@ -2496,7 +2567,18 @@
           if (btn.service && auth.services) { const key = btn.auth || btn.service; if (auth.services[key] === false || auth.services[btn.service] === false) return false; }
           return true;
         }
-        async function fetchLookup(fieldName, keyword) { try { lookupOptionsMap[fieldName] = await rpcCall(activeRuntimeModel.value, 'lookup', { field: fieldName, keyword: keyword || '', limit: 30 }) || []; } catch (e) {} }
+        async function fetchLookup(fieldName, keyword, model = activeRuntimeModel.value, optionsKey = fieldName) {
+          const revision = runtimeRevision;
+          try {
+            const options = await rpcCall(model, 'lookup', { field: fieldName, keyword: keyword || '', limit: 30 });
+            if (revision === runtimeRevision) lookupOptionsMap[optionsKey] = options || [];
+          } catch (e) {}
+        }
+        function childLookupKey(tab, fieldName) { return tab.body.relateModel + ':' + fieldName; }
+        function childLookupOptions(tab, fieldName) { return lookupOptionsMap[childLookupKey(tab, fieldName)] || []; }
+        function fetchChildLookup(tab, fieldName, keyword) {
+          return fetchLookup(fieldName, keyword, tab.body.relateModel, childLookupKey(tab, fieldName));
+        }
         function buildPolishFilterDsl() {
           const conds = [];
           for (const col of runtimeSearchColumns.value) {
@@ -2507,11 +2589,13 @@
           if (conds.length === 0) return []; if (conds.length === 1) return conds; return ['&', ...conds];
         }
         async function executeRuntimeSearch(offset = 0) {
+          const revision = runtimeRevision;
           runtimePage.value = Math.floor(offset / runtimePageSize.value) + 1;
           try {
             const res = await rpcCall(activeRuntimeModel.value, 'search', { filter: buildPolishFilterDsl(), limit: runtimePageSize.value, offset, useDisplayForModel: true });
+            if (revision !== runtimeRevision) return;
             runtimeGridRows.value = res.records || []; runtimeGridTotal.value = res.total || 0;
-          } catch (e) { ElMessage.error('查询失败：' + e.message); }
+          } catch (e) { if (revision === runtimeRevision) ElMessage.error('查询失败：' + e.message); }
         }
         function resetRuntimeSearch() { Object.keys(runtimeSearchValues).forEach(k => delete runtimeSearchValues[k]); executeRuntimeSearch(0); }
         function isRowButtonEnabled(btn, row) { if (!btn.enableCondition) return true; try { return Boolean(new Function('row', 'return Boolean(' + btn.enableCondition + ');')(row)); } catch (e) { return true; } }
@@ -2597,7 +2681,22 @@
               for (const tab of runtimeFormTabs.value) {
                 const fk = tab.body.field; const list = Array.isArray(full[fk]) ? full[fk] : [];
                 if (tab.body?.type === 'manytomany') runtimeFormModal.m2mRows[fk] = list.map(c => ({ id: c.id || c, displayName: c.displayName || String(c), _op: 'keep' }));
-                else runtimeFormModal.childRows[fk] = list.map(c => ({ ...c, _op: 'keep' }));
+                else runtimeFormModal.childRows[fk] = list.map(child => {
+                  const savedRow = { ...child, _op: 'keep' };
+                  for (const col of tab.body.columns || []) {
+                    const value = savedRow[col.name];
+                    if (col.dataType !== 'ManyToOne' || !value) continue;
+                    const id = typeof value === 'object' ? value.id : value;
+                    const key = childLookupKey(tab, col.name);
+                    if (!childLookupOptions(tab, col.name).some(opt => opt.value === id)) {
+                      lookupOptionsMap[key] = [...childLookupOptions(tab, col.name), {
+                        value: id, label: value.displayName || id
+                      }];
+                    }
+                    savedRow[col.name] = id;
+                  }
+                  return savedRow;
+                });
               }
               runtimeFormModal.data = data; runtimeFormModal.visible = true;
             } catch (e) { ElMessage.error(e.message); }
@@ -2615,7 +2714,14 @@
         }
         function addChildRow(tab) { const fk = tab.body.field; if (!runtimeFormModal.childRows[fk]) runtimeFormModal.childRows[fk] = []; const empty = { _op: 'create' }; for (const cc of (tab.body.columns || [])) empty[cc.name] = (cc.dataType === 'Boolean' ? false : ''); runtimeFormModal.childRows[fk].push(empty); }
         function markChildDirty(row) { if (!row._op || row._op === 'keep') row._op = 'update'; }
-        function removeChildRow(tab, row, idx) { if (row.id) row._op = 'delete'; else runtimeFormModal.childRows[tab.body.field].splice(idx, 1); }
+        function removeChildRow(tab, row) {
+          if (row.id) row._op = 'delete';
+          else {
+            const rows = runtimeFormModal.childRows[tab.body.field];
+            const index = rows.indexOf(row);
+            if (index !== -1) rows.splice(index, 1);
+          }
+        }
         function openChildEditModal(tab, row) { childEditModal.tab = tab; childEditModal.columns = tab.body?.columns || []; childEditModal.row = row; childEditModal.visible = true; }
         function confirmChildEditModal() { markChildDirty(childEditModal.row); childEditModal.visible = false; }
         async function openAddErDialog(tab) { addErModal.field = tab.body.field; addErModal.relateModel = tab.body.relateModel || getFieldMeta(tab.body.field)?.relateModel; addErModal.keyword = ''; addErModal.selected = []; await searchAddErCandidates(); addErModal.visible = true; }
@@ -2655,29 +2761,32 @@
               const prof = await rpcCall('rbac_user', 'profile', {});
               if (prof && prof.username) {
                 currentUser.value = prof; authChecking.value = false;
-                const h = window.location.hash || '';
-                if (h.startsWith('#/m/') && h.slice(4)) await openRuntimeModel(h.slice(4).split('?')[0]);
-                else await routeAfterLogin();
+                await routeAfterLogin();
                 return;
               }
             } catch (e) { token.value = ''; localStorage.removeItem('lc_token'); }
           }
           currentUser.value = null; authChecking.value = false;
         }
-        onMounted(async () => { applyTheme(themeName.value); await restoreSessionOrShowLogin(); });
+        onMounted(async () => {
+          window.addEventListener('hashchange', applyWorkspaceRoute);
+          applyTheme(themeName.value);
+          await restoreSessionOrShowLogin();
+        });
+        onUnmounted(() => window.removeEventListener('hashchange', applyWorkspaceRoute));
 
         return {
           authChecking, publicAppsList, rememberUsername, loginForm, loginLoading, loginError, fillPresetAccount, submitLoginPage,
           themeName, currentUser, workspaceMode, studioTab, openTabs, activeTabId, greetingText,
           appsList, businessAppsOnly, appsViewMode, appDialog, importExportDrawerVisible, modelsSummary, showKernelModels, publishTimeline,
-          menuTree, viewsList, menusFlatList, filterViewModel, purgeApplies, purgeAudits,
+          menuTree, runtimeNavigation, viewsList, menusFlatList, filterViewModel, purgeApplies, purgeAudits,
           dictTypes, dictItems, activeDictTypeCode, dictTypeDialog, dictItemDialog,
           codeRules, codeRuleDialog,
           iamSubTab, tenantsList, orgsList, usersList, rolesList, permissionCatalog, assignableMenuGroups, iamFilterTenant,
           tenantDialog, authAppsDialog, orgDialog, userDialog, roleDialog, changePwdDialog, submitChangePassword,
           apiCatalog, activeApiCategory, apiModelSpec, selectedApiEndpoint,
           importPkgText, importAutoPublish, importingPkg,
-          activeRuntimeModel, runtimeLoading, runtimeDisplayMode, visibleGridColumnNames, effectiveGridColumns,
+          activeRuntimeModel, activeRuntimeMenu, runtimePageTitle, runtimeLoading, runtimeDisplayMode, visibleGridColumnNames, effectiveGridColumns,
           runtimeViewData, runtimeSearchValues, runtimeGridRows, runtimeGridTotal, runtimePage, runtimePageSize, runtimeSelectedIds, lookupOptionsMap,
           detailDrawer, switchDrawerToEdit, runtimeFormModal, runtimeFormSaving, addErModal, childEditModal, serviceParamsModal,
           designer, propAdvDialog, designerSaving, dataTypeOptions, versionCenter, viewEditor, menuEditor,
@@ -2706,13 +2815,13 @@
           openMenuEditor, saveMenuNode,
           handleOffline, handleOnline, handleExportModelData, openApplyPurgeDialog, submitApplyPurge,
           handleConfirmPurge, handleRejectPurge, presetRpc, runConsoleRpc,
-          jumpToRuntimeModel, openRuntimeModel, refreshRuntimeAll, exportRuntimeCsv,
+          jumpToRuntimeModel, openRuntimeMenu, refreshRuntimeAll, exportRuntimeCsv,
           getFieldMeta, getFieldDataType, isFieldSelectionOrDict, isFieldBoolean, isFieldNumber,
           isFieldManyToOne, isFieldDate, isFieldFile, isFieldRequired, isWideField, getFieldOptions,
           getOptionTagLabel, getOptionTagColor, formatM2oCell, parseFileCell, formatCellValue, mapButtonType,
           isFormFieldDisabled, isButtonPermitted, fetchLookup, executeRuntimeSearch, resetRuntimeSearch,
           isRowButtonEnabled, onRuntimeSelectionChange, handleGridTbarButton, handleRowButton, confirmServiceParamsRun,
-          uploadFormFile, addChildRow, markChildDirty, removeChildRow, openChildEditModal, confirmChildEditModal,
+          uploadFormFile, addChildRow, markChildDirty, removeChildRow, openChildEditModal, confirmChildEditModal, fetchChildLookup, childLookupOptions,
           openAddErDialog, searchAddErCandidates, confirmAddErSelection, removeM2mRow, submitRuntimeForm
         };
       }

@@ -301,7 +301,7 @@ public class PlatformKernelBootstrap {
         ext.registerOverride("ui_menu", "loadMenu", "kernel", (rs, args) -> uiService.loadMenu());
         ext.registerOverride("ui_menu", "listAssignableMenus", "kernel", (rs, args) -> uiService.listAssignableMenus());
         ext.registerOverride("ui_view", "loadView", "kernel", (rs, args) ->
-                uiService.loadView(str(args.get("model")), str(args.get("type"))));
+                uiService.loadView(str(args.get("model")), str(args.get("type")), str(args.get("menu"))));
 
         // 应用包治理服务
         ext.registerOverride("meta_app", "list", "kernel", (rs, args) -> govService.listApps());

@@ -182,6 +182,7 @@ public class DefaultViewGeneratorService {
                 Map<String, Object> c = new LinkedHashMap<>();
                 c.put("name", cp.getName());
                 c.put("displayName", cp.getDisplayName());
+                c.put("dataType", cp.getDataType());
                 childCols.add(c);
             }
         }

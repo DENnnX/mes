@@ -11,6 +11,8 @@ import com.sie.lowcode.domain.uischema.*;
 import com.sie.lowcode.infrastructure.container.MetaContainerMemoryRegistry;
 import org.springframework.stereotype.Service;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
@@ -89,7 +91,9 @@ public class UiSchemaAppService {
             item.put("model", m.getModel());
             item.put("view", m.getView());
             item.put("filter", m.getFilter());
-            item.put("routePath", (m.getModel() != null && !m.getModel().isBlank()) ? "/m/" + m.getModel() : null);
+            item.put("routePath", (m.getModel() != null && !m.getModel().isBlank())
+                    ? "/menu/" + URLEncoder.encode(m.getName(), StandardCharsets.UTF_8).replace("+", "%20")
+                    : null);
             item.put("children", new ArrayList<Map<String, Object>>());
             nodeMap.put(m.getName(), item);
             if (m.getId() != null) {
@@ -181,7 +185,24 @@ public class UiSchemaAppService {
     /**
      * 加载模型三件套视图契约 + 有效字段元数据 + 字典/动态枚举项 + 服务清单 + RBAC 细粒度权限上下文。
      */
-    public Map<String, Object> loadView(String modelName, String viewKeysCsv) {
+    public Map<String, Object> loadView(String modelName, String viewKeysCsv, String menuName) {
+        Set<String> allowedApps = resolveTenantAllowedApps();
+        Set<String> allowedMenus = resolveEffectiveAllowedMenus();
+        if (menuName != null && !menuName.isBlank()) {
+            MenuNode menu = uiRepo.findMenuByName(menuName)
+                    .filter(m -> m.isActive() && m.getModel() != null && !m.getModel().isBlank())
+                    .orElseThrow(() -> DomainException.permissionDenied("页面不存在或未授权"));
+            if (!"platform_kernel".equals(menu.getAppName()) &&
+                    ((allowedApps != null && !allowedApps.contains(menu.getAppName()))
+                            || !matchesAllowedMenu(allowedMenus, menu))) {
+                throw DomainException.permissionDenied("页面不存在或未授权");
+            }
+            if (modelName != null && !modelName.isBlank() && !modelName.equals(menu.getModel())) {
+                throw DomainException.invalidParams("菜单与模型不匹配");
+            }
+            modelName = menu.getModel();
+            viewKeysCsv = menu.getView();
+        }
         if (modelName == null || modelName.isBlank()) {
             throw DomainException.invalidParams("loadView 必须传入 model 参数");
         }
@@ -201,14 +222,15 @@ public class UiSchemaAppService {
             throw DomainException.stateGuardFailed("抽象父模型或增量扩展包 [" + modelName + "] 无独立运行视图");
         }
 
-        Set<String> allowedApps = resolveTenantAllowedApps();
         if (allowedApps != null && snap.getAppName() != null
                 && !"platform_kernel".equals(snap.getAppName())
                 && !allowedApps.contains(snap.getAppName())) {
             throw DomainException.permissionDenied("访问拒绝：当前租户未授权使用应用 [" + snap.getAppName() + "]");
         }
-        Set<String> allowedMenus = resolveEffectiveAllowedMenus();
-        if (allowedMenus != null && snap.getAppName() != null && !"platform_kernel".equals(snap.getAppName())) {
+        Set<String> permittedViewKeys = new LinkedHashSet<>();
+        boolean restrictViewKeys = false;
+        if ((menuName == null || menuName.isBlank()) && allowedMenus != null
+                && snap.getAppName() != null && !"platform_kernel".equals(snap.getAppName())) {
             List<MenuNode> boundMenus = new ArrayList<>();
             for (MenuNode m : uiRepo.findAllMenus()) {
                 if (m.isActive() && modelName.equals(m.getModel())) {
@@ -217,10 +239,16 @@ public class UiSchemaAppService {
             }
             if (!boundMenus.isEmpty()) {
                 boolean permitted = false;
+                restrictViewKeys = true;
                 for (MenuNode m : boundMenus) {
                     if (matchesAllowedMenu(allowedMenus, m)) {
                         permitted = true;
-                        break;
+                        Set<String> menuKeys = viewKeys(m.getView());
+                        if (menuKeys.isEmpty()) {
+                            restrictViewKeys = false;
+                            break;
+                        }
+                        permittedViewKeys.addAll(menuKeys);
                     }
                 }
                 if (!permitted) {
@@ -231,15 +259,14 @@ public class UiSchemaAppService {
 
         Map<String, Object> viewsMap = new LinkedHashMap<>();
         List<UiViewDef> modelViews = uiRepo.findViewsByModel(modelName);
-        Set<String> requestedKeys = new LinkedHashSet<>();
-        if (viewKeysCsv != null && !viewKeysCsv.isBlank()) {
-            for (String k : viewKeysCsv.split(",")) {
-                if (!k.isBlank()) requestedKeys.add(k.trim());
-            }
+        Set<String> requestedKeys = viewKeys(viewKeysCsv);
+        if (restrictViewKeys && !permittedViewKeys.containsAll(requestedKeys)) {
+            throw DomainException.permissionDenied("当前账号未获授权打开所请求的视图");
         }
 
         for (UiViewDef v : modelViews) {
             if (!v.isActive()) continue;
+            if (restrictViewKeys && !permittedViewKeys.contains(v.getKey())) continue;
             if (requestedKeys.isEmpty() || requestedKeys.contains(v.getKey())) {
                 viewsMap.put(v.getType(), v);
                 viewsMap.put(v.getKey(), v);
@@ -291,6 +318,16 @@ public class UiSchemaAppService {
         result.put("services", snap.getServices());
         result.put("auth", auth);
         return result;
+    }
+
+    private Set<String> viewKeys(String csv) {
+        Set<String> keys = new LinkedHashSet<>();
+        if (csv != null) {
+            for (String key : csv.split(",")) {
+                if (!key.isBlank()) keys.add(key.trim());
+            }
+        }
+        return keys;
     }
 
     private Set<String> resolveTenantAllowedApps() {

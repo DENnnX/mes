@@ -232,7 +232,7 @@ public class LowCodePlatformIntegrationTests {
         assertThat(menus).hasSize(1);
         List<Map<String, Object>> children = (List<Map<String, Object>>) menus.get(0).get("children");
         assertThat(children).extracting(m -> m.get("routePath"))
-                .contains("/m/test_dept", "/m/test_task", "/m/test_task_item");
+                .contains("/menu/test_dept_menu", "/menu/test_task_menu", "/menu/test_task_item_menu");
 
         // 动态加载 test_task 视图三件套契约，验证包含 grid/search/form、OneToMany tab 与状态机按钮
         Map<String, Object> viewRes = requireResult(rpcCall(userToken, "ui_view", "loadView",
@@ -960,6 +960,95 @@ public class LowCodePlatformIntegrationTests {
         Map<String, Object> hqVisible = requireResult(rpcCall(hqToken, "qa_ticket", "search", Map.of("filter", Collections.emptyList())));
         assertThat((List<Map<String, Object>>) hqVisible.get("records"))
                 .extracting(r -> r.get("title")).containsExactly("分站专属工单1");
+    }
+
+    @Test
+    @Order(9)
+    @SuppressWarnings("unchecked")
+    void testManufacturingPackageAndWorkOrderLifecycle() throws IOException {
+        Map<String, Object> pkg = objectMapper.readValue(Path.of("..", "docs", "mes-manufacturing-package.json").toFile(), Map.class);
+        Map<String, Object> imported = requireResult(rpcCall(adminToken, "meta_app", "importPackage",
+                Map.of("package", pkg, "autoPublish", true)));
+        assertThat((List<?>) imported.get("importedModels")).hasSize(7);
+
+        Map<String, Object> material = requireResult(rpcCall(userToken, "mes_material", "create",
+                Map.of("values", Map.of("code", "MAT-01", "name", "钢坯", "unit", "件"))));
+        String materialId = (String) material.get("id");
+        Map<String, Object> product = requireResult(rpcCall(userToken, "mes_product", "create",
+                Map.of("values", Map.of("code", "PRD-01", "name", "电机支架", "bom_lines",
+                        List.of(List.of(0, 0, Map.of("material_id", materialId, "quantity", 2)))))));
+        String productId = (String) product.get("id");
+        assertThat((List<Map<String, Object>>) product.get("bom_lines"))
+                .extracting(line -> line.get("quantity")).containsExactly(2.0);
+
+        Map<String, Object> route = requireResult(rpcCall(userToken, "mes_process_route", "create",
+                Map.of("values", Map.of("code", "RT-01", "name", "支架标准路线", "product_id", productId, "operations",
+                        List.of(
+                                List.of(0, 0, Map.of("step_no", 20, "name", "去毛刺")),
+                                List.of(0, 0, Map.of("step_no", 10, "name", "切割", "bom_lines",
+                                        List.of(List.of(0, 0, Map.of("material_id", materialId, "quantity", 1)))))
+                        )))));
+        String routeId = (String) route.get("id");
+        Map<String, Object> steps = requireResult(rpcCall(userToken, "mes_process", "search",
+                Map.of("filter", List.of(List.of("route_id", "=", routeId)))));
+        List<Map<String, Object>> stepRecords = (List<Map<String, Object>>) steps.get("records");
+        assertThat(stepRecords).extracting(step -> step.get("step_no")).containsExactly(10, 20);
+        Map<String, Object> firstStep = requireResult(rpcCall(userToken, "mes_process", "find", Map.of("id", stepRecords.get(0).get("id"))));
+        assertThat((List<?>) firstStep.get("bom_lines")).hasSize(1);
+
+        Map<String, Object> otherProduct = requireResult(rpcCall(userToken, "mes_product", "create",
+                Map.of("values", Map.of("code", "PRD-02", "name", "压板"))));
+        requireError(rpcCall(userToken, "mes_work_order", "create", Map.of("values", Map.of(
+                "order_no", "WO-WRONG", "product_id", otherProduct.get("id"), "route_id", routeId, "planned_quantity", 20))), -32602);
+        Map<String, Object> order = requireResult(rpcCall(userToken, "mes_work_order", "create", Map.of("values", Map.of(
+                "order_no", "WO-001", "product_id", productId, "route_id", routeId, "planned_quantity", 20))));
+        String orderId = (String) order.get("id");
+        Map<String, Object> orderArgs = Map.of("id", orderId);
+        assertThat(order.get("status")).isEqualTo("PENDING");
+        requireError(rpcCall(userToken, "mes_work_order", "finishProduction", orderArgs), -32003);
+        requireError(rpcCall(userToken, "mes_work_order", "update",
+                Map.of("id", orderId, "values", Map.of("status", "DONE"))), -32003);
+        Map<String, Object> started = requireResult(rpcCall(userToken, "mes_work_order", "startProduction", orderArgs));
+        assertThat(started.get("status")).isEqualTo("RUNNING");
+        requireError(rpcCall(userToken, "mes_work_order", "startProduction", orderArgs), -32003);
+        Map<String, Object> finished = requireResult(rpcCall(userToken, "mes_work_order", "finishProduction", orderArgs));
+        assertThat(finished.get("status")).isEqualTo("DONE");
+        requireError(rpcCall(userToken, "mes_work_order", "finishProduction", orderArgs), -32003);
+        Map<String, Object> reloaded = requireResult(rpcCall(userToken, "mes_work_order", "find", orderArgs));
+        assertThat(reloaded.get("status")).isEqualTo("DONE");
+
+        String managementMenu = "mes_work_order_menu";
+        String executionMenu = "mes_work_order_execution_menu";
+        List<Map<String, Object>> menuTree = requireResult(rpcCall(userToken, "ui_menu", "loadMenu", null));
+        Map<String, Object> appRoot = menuTree.stream().filter(m -> "mes_manufacturing_root_menu".equals(m.get("name")))
+                .findFirst().orElseThrow();
+        List<Map<String, Object>> children = (List<Map<String, Object>>) appRoot.get("children");
+        assertThat(children).extracting(m -> m.get("routePath"))
+                .contains("/menu/" + managementMenu, "/menu/" + executionMenu);
+        Map<String, Object> execution = requireResult(rpcCall(userToken, "ui_view", "loadView",
+                Map.of("menu", executionMenu, "type", "mes_work_order_grid")));
+        assertThat((Map<String, Object>) execution.get("views"))
+                .containsKey("mes_work_order_execution_grid").doesNotContainKey("mes_work_order_grid");
+
+        requireResult(rpcCall(adminToken, "rbac_tenant", "saveTenant", Map.of("values",
+                Map.of("id", "mes_execution_tenant", "code", "mes_execution_tenant", "name", "MES 执行测试租户"))));
+        requireResult(rpcCall(adminToken, "rbac_tenant", "authorizeApps", Map.of(
+                "tenantId", "mes_execution_tenant", "authorizedApps", List.of("mes_manufacturing"),
+                "authorizedMenus", List.of(executionMenu))));
+        requireResult(rpcCall(adminToken, "rbac_user", "saveUser", Map.of("values", Map.of(
+                "username", "mes_execution_test", "displayName", "工单执行测试员", "tenantId", "mes_execution_tenant",
+                "password", "123456", "roleCodes", List.of("ROLE_APP_USER")))));
+        Map<String, Object> operator = requireResult(rpcCall(null, "rbac_user", "login",
+                Map.of("username", "mes_execution_test", "password", "123456")));
+        String operatorToken = (String) operator.get("token");
+        requireResult(rpcCall(operatorToken, "ui_view", "loadView", Map.of("menu", executionMenu)));
+        requireError(rpcCall(operatorToken, "ui_view", "loadView", Map.of("menu", managementMenu)), -32001);
+        requireError(rpcCall(operatorToken, "ui_view", "loadView",
+                Map.of("model", "mes_work_order", "type", "mes_work_order_grid")), -32001);
+        Map<String, Object> legacyView = requireResult(rpcCall(operatorToken, "ui_view", "loadView",
+                Map.of("model", "mes_work_order")));
+        assertThat((Map<String, Object>) legacyView.get("views"))
+                .containsKey("mes_work_order_execution_grid").doesNotContainKey("mes_work_order_grid");
     }
 
     @SuppressWarnings("unchecked")

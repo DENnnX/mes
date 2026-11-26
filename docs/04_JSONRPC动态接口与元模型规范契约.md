@@ -71,8 +71,10 @@
 ### 3.1 动态前端驱动契约（对标 `sie-iidp-iam`）
 | 模型 (`model`) | 服务 (`service`) | 入参 (`args`) | 返回结构 (`result`) |
 | :--- | :--- | :--- | :--- |
-| `ui_menu` | `loadMenu` | `{}` | 树形菜单列表（自动隐藏抽象模型/扩展包/未授权租户应用） |
-| `ui_view` | `loadView` | `{model, type:"m_grid,m_search,m_form"}` | `{modelMeta, views, fields, dictOptions, dynamicOptions, services, auth: {read,create,update,delete,services}}` |
+| `ui_menu` | `loadMenu` | `{}` | 授权菜单树。业务节点带 `routePath`，格式为 `/menu/{menuName}` |
+| `ui_view` | `loadView` | 页面传 `{menu}`，模型调用可传 `{model, type:"m_grid,m_search,m_form"}` | `{modelMeta, views, fields, dictOptions, dynamicOptions, services, auth: {read,create,update,delete,services}}` |
+
+按菜单加载时，后端校验菜单状态、应用与菜单授权，并使用菜单绑定的模型和视图。对有菜单白名单的调用者，按模型加载也受其有权访问的视图范围约束。
 
 ### 3.2 动态模型自动标准 CRUD 与生命周期钩子服务（任一已发布模型通用）
 假设发布模型为 `<M>`：

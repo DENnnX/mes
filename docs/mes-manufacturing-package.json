@@ -1,0 +1,315 @@
+{
+  "app": {"name": "mes_manufacturing", "displayName": "生产制造 MES", "category": "manufacturing", "version": "1.0.0", "description": "维护产品、物料和工艺，执行生产工单。"},
+  "models": [
+    {
+      "name": "mes_material",
+      "displayName": "物料",
+      "properties": [
+        {"name": "code", "displayName": "物料编码", "dataType": "String", "required": true, "unique": true, "maxLength": 40},
+        {"name": "name", "displayName": "物料名称", "dataType": "String", "required": true, "displayForModel": true, "maxLength": 100},
+        {"name": "unit", "displayName": "单位", "dataType": "String", "required": true, "maxLength": 20}
+      ]
+    },
+    {
+      "name": "mes_product",
+      "displayName": "产品",
+      "properties": [
+        {"name": "code", "displayName": "产品编码", "dataType": "String", "required": true, "unique": true, "maxLength": 40},
+        {"name": "name", "displayName": "产品名称", "dataType": "String", "required": true, "displayForModel": true, "maxLength": 100},
+        {"name": "specification", "displayName": "规格", "dataType": "String", "maxLength": 100},
+        {"name": "bom_lines", "displayName": "产品 BOM", "dataType": "OneToMany", "relateModel": "mes_product_bom", "inverseName": "product_id"}
+      ]
+    },
+    {
+      "name": "mes_product_bom",
+      "displayName": "产品 BOM",
+      "indexes": [
+        {
+          "name": "uq_mes_product_material",
+          "columnList": ["product_id", "material_id"],
+          "unique": true
+        }
+      ],
+      "properties": [
+        {"name": "product_id", "displayName": "所属产品", "dataType": "ManyToOne", "required": true, "relateModel": "mes_product", "onDelete": "CASCADE"},
+        {"name": "material_id", "displayName": "物料", "dataType": "ManyToOne", "required": true, "relateModel": "mes_material"},
+        {"name": "quantity", "displayName": "用量", "dataType": "Decimal", "required": true, "minValue": 0.0001}
+      ]
+    },
+    {
+      "name": "mes_process_route",
+      "displayName": "工艺路线",
+      "properties": [
+        {"name": "code", "displayName": "路线编码", "dataType": "String", "required": true, "unique": true, "maxLength": 40},
+        {"name": "name", "displayName": "路线名称", "dataType": "String", "required": true, "displayForModel": true, "maxLength": 100},
+        {"name": "product_id", "displayName": "适用产品", "dataType": "ManyToOne", "required": true, "relateModel": "mes_product"},
+        {"name": "operations", "displayName": "工序顺序", "dataType": "OneToMany", "relateModel": "mes_process", "inverseName": "route_id"}
+      ]
+    },
+    {
+      "name": "mes_process",
+      "displayName": "工序",
+      "orderBy": "step_no asc",
+      "indexes": [
+        {
+          "name": "uq_mes_route_step",
+          "columnList": ["route_id", "step_no"],
+          "unique": true
+        }
+      ],
+      "properties": [
+        {"name": "route_id", "displayName": "工艺路线", "dataType": "ManyToOne", "required": true, "relateModel": "mes_process_route", "onDelete": "CASCADE"},
+        {"name": "step_no", "displayName": "工序序号", "dataType": "Integer", "required": true, "minValue": 1},
+        {"name": "name", "displayName": "工序名称", "dataType": "String", "required": true, "displayForModel": true, "maxLength": 100},
+        {"name": "bom_lines", "displayName": "工序 BOM", "dataType": "OneToMany", "relateModel": "mes_process_bom", "inverseName": "process_id"}
+      ]
+    },
+    {
+      "name": "mes_process_bom",
+      "displayName": "工序 BOM",
+      "indexes": [
+        {
+          "name": "uq_mes_process_material",
+          "columnList": ["process_id", "material_id"],
+          "unique": true
+        }
+      ],
+      "properties": [
+        {"name": "process_id", "displayName": "所属工序", "dataType": "ManyToOne", "required": true, "relateModel": "mes_process", "onDelete": "CASCADE"},
+        {"name": "material_id", "displayName": "物料", "dataType": "ManyToOne", "required": true, "relateModel": "mes_material"},
+        {"name": "quantity", "displayName": "用量", "dataType": "Decimal", "required": true, "minValue": 0.0001}
+      ]
+    },
+    {
+      "name": "mes_work_order",
+      "displayName": "生产工单",
+      "properties": [
+        {"name": "order_no", "displayName": "工单号", "dataType": "String", "required": true, "unique": true, "displayForModel": true, "maxLength": 40},
+        {"name": "product_id", "displayName": "产品", "dataType": "ManyToOne", "required": true, "relateModel": "mes_product"},
+        {"name": "route_id", "displayName": "工艺路线", "dataType": "ManyToOne", "required": true, "relateModel": "mes_process_route"},
+        {"name": "planned_quantity", "displayName": "计划数量", "dataType": "Integer", "required": true, "minValue": 1},
+        {"name": "due_date", "displayName": "计划完成日期", "dataType": "Date"},
+        {
+          "name": "status",
+          "displayName": "状态",
+          "dataType": "Selection",
+          "defaultValue": "PENDING",
+          "values": [
+            {"value": "PENDING", "label": "待生产", "color": "info"},
+            {"value": "RUNNING", "label": "生产中", "color": "warning"},
+            {"value": "DONE", "label": "已完成", "color": "success"}
+          ]
+        }
+      ],
+      "services": [
+        {
+          "name": "validate",
+          "displayName": "工单产品、路线与状态校验",
+          "type": "GROOVY_SCRIPT",
+          "auth": "update",
+          "scriptContent": "import com.sie.lowcode.domain.runtime.RecordData\nimport com.sie.lowcode.domain.shared.DomainException\n\ndef values = new RecordData(args.values)\ndef current = args.create ? null : row\ndef productId = values.containsKey('product_id') ? values.getStr('product_id') : current?.getStr('product_id')\ndef routeId = values.containsKey('route_id') ? values.getStr('route_id') : current?.getStr('route_id')\nif (!productId?.trim() || !routeId?.trim()) {\n    throw DomainException.invalidParams('生产工单必须选择产品和工艺路线')\n}\n\ndef route = env.get('mes_process_route').call('find', [id: routeId])\nif (route.getStr('product_id') != productId) {\n    throw DomainException.invalidParams('所选工艺路线不适用于该产品')\n}\n\ndef oldStatus = current?.getStr('status')\ndef status = values.getStr('status')\nif (args.create && status && status != 'PENDING') {\n    throw DomainException.stateGuardFailed('新工单只能处于待生产状态')\n}\nif (!args.create && values.containsKey('status') && status != oldStatus) {\n    def permitted = [PENDING: 'RUNNING', RUNNING: 'DONE'].get(oldStatus)\n    if (!permitted || status != permitted) {\n        throw DomainException.stateGuardFailed('工单只允许按待生产、生产中、已完成的顺序流转')\n    }\n}\nreturn true"
+        },
+        {
+          "name": "startProduction",
+          "displayName": "开工",
+          "type": "STATE_TRANSITION",
+          "auth": "action",
+          "transitionRule": {
+            "statusField": "status",
+            "fromStates": ["PENDING"],
+            "toState": "RUNNING",
+            "errorMessage": "仅待生产的工单可以开工"
+          }
+        },
+        {
+          "name": "finishProduction",
+          "displayName": "完工",
+          "type": "STATE_TRANSITION",
+          "auth": "action",
+          "transitionRule": {
+            "statusField": "status",
+            "fromStates": ["RUNNING"],
+            "toState": "DONE",
+            "errorMessage": "仅生产中的工单可以完工"
+          }
+        }
+      ]
+    }
+  ],
+  "views": {
+    "mes_work_order_grid": {
+      "name": "生产工单列表",
+      "model": "mes_work_order",
+      "type": "grid",
+      "body": {
+        "type": "grid",
+        "columns": [
+          {"name": "order_no"},
+          {"name": "product_id"},
+          {"name": "route_id"},
+          {"name": "planned_quantity"},
+          {"name": "due_date"},
+          {"name": "status"}
+        ],
+        "tbar": [
+          {"name": "新增", "action": "create", "auth": "create", "type": "primary"}
+        ],
+        "buttons": [
+          {"name": "详情", "action": "preview", "auth": "read", "type": "default"},
+          {"name": "编辑", "action": "edit", "auth": "update", "type": "primary"},
+          {
+            "name": "开工",
+            "action": "custom",
+            "service": "startProduction",
+            "auth": "action",
+            "type": "success",
+            "enableCondition": "row.status === 'PENDING'",
+            "args": {"id": "$row.id"},
+            "actionAfter": "refreshTable"
+          },
+          {
+            "name": "完工",
+            "action": "custom",
+            "service": "finishProduction",
+            "auth": "action",
+            "type": "success",
+            "enableCondition": "row.status === 'RUNNING'",
+            "args": {"id": "$row.id"},
+            "actionAfter": "refreshTable"
+          }
+        ]
+      }
+    },
+    "mes_work_order_execution_grid": {
+      "name": "工单执行列表",
+      "model": "mes_work_order",
+      "type": "grid",
+      "body": {
+        "type": "grid",
+        "columns": [
+          {"name": "order_no"},
+          {"name": "route_id"},
+          {"name": "planned_quantity"},
+          {"name": "status", "displayName": "执行状态"}
+        ],
+        "buttons": [
+          {"name": "详情", "action": "preview", "auth": "read", "type": "default"},
+          {
+            "name": "开工",
+            "action": "custom",
+            "service": "startProduction",
+            "auth": "action",
+            "type": "success",
+            "enableCondition": "row.status === 'PENDING'",
+            "args": {"id": "$row.id"},
+            "actionAfter": "refreshTable"
+          },
+          {
+            "name": "完工",
+            "action": "custom",
+            "service": "finishProduction",
+            "auth": "action",
+            "type": "success",
+            "enableCondition": "row.status === 'RUNNING'",
+            "args": {"id": "$row.id"},
+            "actionAfter": "refreshTable"
+          }
+        ]
+      }
+    },
+    "mes_work_order_search": {
+      "name": "生产工单搜索",
+      "model": "mes_work_order",
+      "type": "search",
+      "body": {
+        "type": "search",
+        "columns": [
+          {"name": "order_no"},
+          {"name": "status"}
+        ]
+      }
+    },
+    "mes_work_order_form": {
+      "name": "生产工单表单",
+      "model": "mes_work_order",
+      "type": "form",
+      "body": {
+        "type": "form",
+        "columns": [
+          {"name": "order_no"},
+          {"name": "product_id"},
+          {"name": "route_id"},
+          {"name": "planned_quantity"},
+          {"name": "due_date"}
+        ]
+      }
+    }
+  },
+  "menus": {
+    "mes_manufacturing_root_menu": {"name": "mes_manufacturing_root_menu", "display_name": "生产制造 MES", "sequence": 10},
+    "mes_material_menu": {
+      "name": "mes_material_menu",
+      "display_name": "物料",
+      "sequence": 10,
+      "model": "mes_material",
+      "view": "mes_material_grid,mes_material_search,mes_material_form",
+      "parent_ids": {"@ref": "mes_manufacturing_root_menu"}
+    },
+    "mes_product_menu": {
+      "name": "mes_product_menu",
+      "display_name": "产品",
+      "sequence": 20,
+      "model": "mes_product",
+      "view": "mes_product_grid,mes_product_search,mes_product_form",
+      "parent_ids": {"@ref": "mes_manufacturing_root_menu"}
+    },
+    "mes_product_bom_menu": {
+      "name": "mes_product_bom_menu",
+      "display_name": "产品 BOM",
+      "sequence": 30,
+      "model": "mes_product_bom",
+      "view": "mes_product_bom_grid,mes_product_bom_search,mes_product_bom_form",
+      "parent_ids": {"@ref": "mes_manufacturing_root_menu"}
+    },
+    "mes_process_route_menu": {
+      "name": "mes_process_route_menu",
+      "display_name": "工艺路线",
+      "sequence": 40,
+      "model": "mes_process_route",
+      "view": "mes_process_route_grid,mes_process_route_search,mes_process_route_form",
+      "parent_ids": {"@ref": "mes_manufacturing_root_menu"}
+    },
+    "mes_process_menu": {
+      "name": "mes_process_menu",
+      "display_name": "工序",
+      "sequence": 50,
+      "model": "mes_process",
+      "view": "mes_process_grid,mes_process_search,mes_process_form",
+      "parent_ids": {"@ref": "mes_manufacturing_root_menu"}
+    },
+    "mes_process_bom_menu": {
+      "name": "mes_process_bom_menu",
+      "display_name": "工序 BOM",
+      "sequence": 60,
+      "model": "mes_process_bom",
+      "view": "mes_process_bom_grid,mes_process_bom_search,mes_process_bom_form",
+      "parent_ids": {"@ref": "mes_manufacturing_root_menu"}
+    },
+    "mes_work_order_menu": {
+      "name": "mes_work_order_menu",
+      "display_name": "生产工单",
+      "sequence": 70,
+      "model": "mes_work_order",
+      "view": "mes_work_order_grid,mes_work_order_search,mes_work_order_form",
+      "parent_ids": {"@ref": "mes_manufacturing_root_menu"}
+    },
+    "mes_work_order_execution_menu": {
+      "name": "mes_work_order_execution_menu",
+      "display_name": "工单执行",
+      "sequence": 80,
+      "model": "mes_work_order",
+      "view": "mes_work_order_execution_grid,mes_work_order_search,mes_work_order_form",
+      "parent_ids": {"@ref": "mes_manufacturing_root_menu"}
+    }
+  }
+}
