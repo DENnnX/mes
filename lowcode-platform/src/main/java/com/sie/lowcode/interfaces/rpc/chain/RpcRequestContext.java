@@ -8,6 +8,9 @@ import com.sie.lowcode.interfaces.rpc.dto.JsonRpcRequest;
 import java.util.*;
 
 public class RpcRequestContext {
+    private static final Set<String> ANONYMOUS_SERVICES = Set.of(
+            "rbac_user.login", "auth.login", "sys_portal.publicApps");
+
     private final String tenantId;
     private final String authorizationHeader;
     private final boolean openEndpoint;
@@ -34,6 +37,7 @@ public class RpcRequestContext {
     public String getTenantId() { return tenantId; }
     public String getAuthorizationHeader() { return authorizationHeader; }
     public boolean isOpenEndpoint() { return openEndpoint; }
+    public boolean isAnonymousService() { return ANONYMOUS_SERVICES.contains(model + "." + service); }
     public JsonRpcRequest getRequest() { return request; }
 
     public String getAppName() { return appName; }

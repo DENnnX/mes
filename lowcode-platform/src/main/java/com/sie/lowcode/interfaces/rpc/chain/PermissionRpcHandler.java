@@ -17,10 +17,9 @@ import java.util.Set;
 @Component
 @Order(30)
 public class PermissionRpcHandler implements RpcHandler {
-    private static final Set<String> OPEN_METHODS = Set.of(
-            "rbac_user.login", "rbac_user.logout", "auth.login", "sys_portal.publicApps");
     private static final Set<String> AUTH_SELF_METHODS = Set.of(
-            "rbac_user.profile", "rbac_user.changePassword", "auth.profile", "auth.changePassword");
+            "rbac_user.profile", "rbac_user.changePassword", "rbac_user.logout",
+            "auth.profile", "auth.changePassword", "auth.logout");
     private static final Set<String> ADMIN_ONLY = Set.of(
             "confirmPurge", "rejectPurge");
     private static final Set<String> TENANT_ADMIN_OR_ROOT = Set.of(
@@ -42,8 +41,11 @@ public class PermissionRpcHandler implements RpcHandler {
     @Override
     public Object handle(RpcRequestContext ctx, Chain next) {
         String fullKey = ctx.getModel() + "." + ctx.getService();
-        if (ctx.isOpenEndpoint() || OPEN_METHODS.contains(fullKey)) {
+        if (ctx.isAnonymousService()) {
             return next.proceed(ctx);
+        }
+        if (ctx.getUserAccount() == null) {
+            throw DomainException.permissionDenied("请先登录");
         }
         if (AUTH_SELF_METHODS.contains(fullKey)) {
             return next.proceed(ctx);

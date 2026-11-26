@@ -26,7 +26,7 @@
         ├── main/resources/
         │   ├── application.properties
         │   └── static/index.html     # 独立登录页 + 管理后台 + 动态应用使用端前端单页应用
-        └── test/java/...             # 8 项端到端集成测试
+        └── test/java/...             # 平台与 MES 应用集成测试
 ```
 
 ---
@@ -165,6 +165,7 @@ java -Dserver.port=8089 -DDB_PATH=./my-data/lowcode.db -jar target/lowcode-platf
 - [02_DDD领域建模与数据模型设计.md](docs/02_DDD领域建模与数据模型设计.md)
 - [03_状态机与引擎生命周期设计.md](docs/03_状态机与引擎生命周期设计.md)
 - [04_JSONRPC动态接口与元模型规范契约.md](docs/04_JSONRPC动态接口与元模型规范契约.md)
+- **生产制造 MES**： [可导入应用包](docs/mes-manufacturing-package.json) · [从建档到工单完工](docs/生产制造MES_使用教程.md)
 - **快递站管理系统（低代码实战样例）**：
   - [快递站管理系统_设计时操作流程.md](docs/快递站管理系统_设计时操作流程.md)
   - [快递站管理系统_使用教程.md](docs/快递站管理系统_使用教程.md)

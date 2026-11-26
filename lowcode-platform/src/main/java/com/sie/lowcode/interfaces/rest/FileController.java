@@ -72,12 +72,24 @@ public class FileController {
     }
 
     @GetMapping("/{fileId}")
-    public ResponseEntity<Resource> download(@PathVariable("fileId") String fileId) {
+    public ResponseEntity<Resource> download(@PathVariable("fileId") String fileId,
+                                             @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        UserAccount user = iamAppService.authenticate(authHeader).orElse(null);
+        if (user == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         Optional<Map<String, Object>> metaOpt = foundationRepo.findFileMetaById(fileId);
         if (metaOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
         Map<String, Object> meta = metaOpt.get();
+        String fileTenant = (String) meta.get("tenant_id");
+        String userTenant = Objects.requireNonNullElse(user.getTenantId(), MetaContext.DEFAULT_TENANT);
+        Set<String> managedTenants = iamAppService.resolveManagedTenantIds(user);
+        if (fileTenant == null || (!userTenant.equals(fileTenant)
+                && managedTenants != null && !managedTenants.contains(fileTenant))) {
+            return ResponseEntity.notFound().build();
+        }
         Path path = Paths.get(String.valueOf(meta.get("storage_path")));
         if (!Files.exists(path)) {
             return ResponseEntity.notFound().build();
@@ -86,7 +98,9 @@ public class FileController {
         String encoded = URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20");
         String ct = meta.get("content_type") != null ? String.valueOf(meta.get("content_type")) : MediaType.APPLICATION_OCTET_STREAM_VALUE;
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename*=UTF-8''" + encoded)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encoded)
+                .header("X-Content-Type-Options", "nosniff")
+                .cacheControl(CacheControl.noStore())
                 .contentType(MediaType.parseMediaType(ct))
                 .body(new FileSystemResource(path));
     }

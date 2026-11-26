@@ -1,15 +1,20 @@
 package com.sie.lowcode.interfaces.rpc.chain;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sie.lowcode.application.*;
 import com.sie.lowcode.domain.iam.*;
+import com.sie.lowcode.domain.runtime.FilterDsl;
 import com.sie.lowcode.domain.shared.DomainException;
 import com.sie.lowcode.domain.shared.MetaContext;
 import com.sie.lowcode.domain.uischema.*;
 import com.sie.lowcode.infrastructure.persistence.sqlite.SqliteUiSchemaRepository;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -25,19 +30,22 @@ public class ExecuteMetaRpcHandler implements RpcHandler {
     private final FoundationAppService foundationAppService;
     private final SqliteUiSchemaRepository uiRepo;
     private final ObjectMapper objectMapper;
+    private final TransactionTemplate transactions;
 
     public ExecuteMetaRpcHandler(IamAppService iamAppService,
                                  UiSchemaAppService uiSchemaAppService,
                                  MetaGovernanceAppService govService,
                                  FoundationAppService foundationAppService,
                                  SqliteUiSchemaRepository uiRepo,
-                                 ObjectMapper objectMapper) {
+                                 ObjectMapper objectMapper,
+                                 TransactionTemplate transactions) {
         this.iamAppService = iamAppService;
         this.uiSchemaAppService = uiSchemaAppService;
         this.govService = govService;
         this.foundationAppService = foundationAppService;
         this.uiRepo = uiRepo;
         this.objectMapper = objectMapper;
+        this.transactions = transactions;
     }
 
     @Override
@@ -56,7 +64,9 @@ public class ExecuteMetaRpcHandler implements RpcHandler {
                     String targetApp = str(args.get("appName") != null ? args.get("appName") : args.get("targetApp"));
                     return iamAppService.login(str(args.get("username")), str(args.get("password")), targetApp);
                 case "logout":
-                    iamAppService.logout(ctx.getAuthorizationHeader());
+                    String sessionToken = ctx.getAuthorizationHeader();
+                    if (sessionToken == null || sessionToken.isBlank()) sessionToken = str(ctx.getClientContext().get("token"));
+                    iamAppService.logout(sessionToken);
                     return Map.of("loggedOut", true);
                 case "profile":
                     return iamAppService.buildProfileData(ctx.getUserAccount());
@@ -189,7 +199,7 @@ public class ExecuteMetaRpcHandler implements RpcHandler {
             }
         }
         if ("ui_view".equals(model) && "loadView".equals(service)) {
-            return uiSchemaAppService.loadView(str(args.get("model")), str(args.get("type")));
+            return uiSchemaAppService.loadView(str(args.get("model")), str(args.get("type")), str(args.get("menu")));
         }
 
         // 3. 在线编辑视图与菜单定义（Dev Center 能力）
@@ -225,7 +235,33 @@ public class ExecuteMetaRpcHandler implements RpcHandler {
 
         // 4. 所有已注册模型（含自举 meta_app / meta_model / 用户自定义模型）统一通过 MetaContext.get(model).call(service, args) 派发
         MetaContext meta = ctx.getMetaContext();
+        if (args.containsKey("_skipValidate")) {
+            args = new LinkedHashMap<>(args);
+            args.remove("_skipValidate");
+        }
+        String menu = str(args.get("menu"));
+        if (menu != null && !menu.isBlank() && ("search".equals(service) || "count".equals(service))) {
+            String filter = uiSchemaAppService.loadMenuFilter(menu, model);
+            if (filter != null && !filter.isBlank()) {
+                args = new LinkedHashMap<>(args);
+                args.put("filter", parseMenuFilter(filter).and(FilterDsl.parse(args.get("filter"))).getNodes());
+            }
+        }
+        if ("create".equals(service) || "update".equals(service) || "delete".equals(service)) {
+            Map<String, Object> writeArgs = args;
+            return transactions.execute(status -> meta.get(model).call(service, writeArgs));
+        }
         return meta.get(model).call(service, args);
+    }
+
+    private FilterDsl parseMenuFilter(String filter) {
+        try {
+            Object raw = objectMapper.readValue(filter, Object.class);
+            if (raw instanceof List<?> || raw instanceof Map<?, ?>) return FilterDsl.parse(raw);
+        } catch (JsonProcessingException ignored) {
+            // Report invalid menu configuration without running an unfiltered query.
+        }
+        throw DomainException.invalidParams("菜单默认筛选必须是 JSON 数组或对象");
     }
 
     private String str(Object o) {

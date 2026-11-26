@@ -55,6 +55,8 @@ public class ModelInheritanceDomainService {
         base.setOrderBy(current.getOrderBy());
         base.setDisplayFormat(current.getDisplayFormat());
         base.setDataScope(current.getDataScope());
+        base.setValidateWritesWithActiveVersion(current.isValidateWritesWithActiveVersion());
+        base.setUseActiveVersionForRecords(current.isUseActiveVersionForRecords());
         base.setParents(new ArrayList<>(current.getParents()));
 
         for (String parentName : current.getParents()) {
@@ -122,6 +124,8 @@ public class ModelInheritanceDomainService {
         c.setOrderBy(src.getOrderBy());
         c.setDisplayFormat(src.getDisplayFormat());
         c.setDataScope(src.getDataScope());
+        c.setValidateWritesWithActiveVersion(src.isValidateWritesWithActiveVersion());
+        c.setUseActiveVersionForRecords(src.isUseActiveVersionForRecords());
         c.setIndexes(new ArrayList<>(src.getIndexes()));
         c.setProperties(new ArrayList<>(src.getProperties()));
         c.setServices(new ArrayList<>(src.getServices()));

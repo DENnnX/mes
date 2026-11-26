@@ -92,7 +92,9 @@ public class MetaGovernanceAppService {
         registerRollbackReloadGuard();
 
         AppAggregate app = objectMapper.convertValue(packageJson.get("app"), AppAggregate.class);
-        saveApp(app);
+        if (app == null || app.getName() == null || app.getName().isBlank()) {
+            throw DomainException.invalidParams("应用标识 (name) 不能为空");
+        }
 
         List<Map<String, Object>> modelMaps = (List<Map<String, Object>>) packageJson.get("models");
         List<ModelSnapshot> batchSnapshots = new ArrayList<>();
@@ -114,17 +116,17 @@ public class MetaGovernanceAppService {
             validationService.validateOrThrow(snap, availableNames);
         }
 
-        // 2. 保存视图声明（若包内有声明）
-        if (packageJson.get("views") instanceof Map) {
-            Map<String, Object> viewsObj = (Map<String, Object>) packageJson.get("views");
-            for (Map.Entry<String, Object> entry : viewsObj.entrySet()) {
-                UiViewDef viewDef = objectMapper.convertValue(entry.getValue(), UiViewDef.class);
-                if (viewDef.getKey() == null || viewDef.getKey().isBlank()) {
-                    viewDef.setKey(entry.getKey());
-                }
-                if (viewDef.getId() == null) viewDef.setId(viewDef.getKey());
-                uiRepo.saveView(viewDef);
-            }
+        List<UiViewDef> views = readPackageViews(packageJson.get("views"));
+        List<MenuNode> menus = readPackageMenus(packageJson.get("menus"), app.getName());
+        if (autoPublish) {
+            saveApp(app);
+            views.forEach(uiRepo::saveView);
+        } else if (batchSnapshots.isEmpty()) {
+            throw DomainException.invalidParams("草稿导入至少需要一个模型版本承载应用配置");
+        } else if (appRepo.findByName(app.getName()).isEmpty()) {
+            AppAggregate draftApp = objectMapper.convertValue(app, AppAggregate.class);
+            draftApp.setState("DRAFT");
+            saveApp(draftApp);
         }
 
         // 3. 分阶段导入：先持久化全部草稿并构建默认三件套视图，再统一影响检查与发布，避免同批模型互指失败
@@ -135,7 +137,7 @@ public class MetaGovernanceAppService {
         for (ModelSnapshot snap : batchSnapshots) {
             ModelVersion draft = saveModelDraftInternal(snap, availableNames);
             draftsByModel.put(snap.getName(), draft);
-            if (!snap.isAbstractModel() && !snap.isExtensionPackage()
+            if (autoPublish && !snap.isAbstractModel() && !snap.isExtensionPackage()
                     && uiRepo.findViewsByModel(snap.getName()).isEmpty()) {
                 ModelSnapshot effective = inheritanceService.resolveEffectiveSnapshot(snap.getName(), knownMap);
                 for (UiViewDef v : viewGenerator.generateDefaultTriadViews(effective != null ? effective : snap, knownMap)) {
@@ -144,10 +146,17 @@ public class MetaGovernanceAppService {
             }
         }
 
+        if (!autoPublish) {
+            stagePackageUi(app, views, menus, draftsByModel);
+        }
         List<Map<String, Object>> importedModels = new ArrayList<>();
         for (ModelSnapshot snap : batchSnapshots) {
             ModelVersion draft = draftsByModel.get(snap.getName());
             if (autoPublish) {
+                if (draft.getPendingUiJson() != null) {
+                    draft.setPendingUiJson(null);
+                    modelRepo.saveVersion(draft);
+                }
                 ImpactReport report = checkImpact(snap.getName(), draft.getId());
                 if (!report.isPassed()) {
                     throw DomainException.impactBlocked(
@@ -158,16 +167,42 @@ public class MetaGovernanceAppService {
             importedModels.add(Map.of("modelName", snap.getName(), "versionId", draft.getId(), "versionNo", draft.getVersionNo()));
         }
 
-        // 4. 保存菜单（若未提供菜单且自动发布，为每个模型创建默认菜单挂于根应用下）
-        if (packageJson.get("menus") instanceof Map) {
-            Map<String, Object> menusObj = (Map<String, Object>) packageJson.get("menus");
-            for (Map.Entry<String, Object> entry : menusObj.entrySet()) {
+        if (autoPublish) {
+            menus.forEach(uiRepo::saveMenu);
+        }
+        memoryRegistry.reloadAll();
+        return Map.of(
+                "app", app,
+                "importedModels", importedModels,
+                "autoPublished", autoPublish
+        );
+    }
+
+    private List<UiViewDef> readPackageViews(Object rawViews) {
+        List<UiViewDef> views = new ArrayList<>();
+        if (rawViews instanceof Map<?, ?> viewMap) {
+            for (Map.Entry<?, ?> entry : viewMap.entrySet()) {
+                UiViewDef view = objectMapper.convertValue(entry.getValue(), UiViewDef.class);
+                if (view.getKey() == null || view.getKey().isBlank()) view.setKey(entry.getKey().toString());
+                if (view.getId() == null) view.setId(view.getKey());
+                views.add(view);
+            }
+        }
+        return views;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<MenuNode> readPackageMenus(Object rawMenus, String appName) {
+        List<MenuNode> menus = new ArrayList<>();
+        if (rawMenus instanceof Map<?, ?> menuMap) {
+            for (Map.Entry<?, ?> entry : menuMap.entrySet()) {
                 Map<String, Object> mMap = (Map<String, Object>) entry.getValue();
+                String key = entry.getKey().toString();
                 MenuNode node = new MenuNode();
-                node.setId(entry.getKey());
-                node.setName(String.valueOf(mMap.getOrDefault("name", entry.getKey())));
+                node.setId(key);
+                node.setName(String.valueOf(mMap.getOrDefault("name", key)));
                 node.setDisplayName(String.valueOf(mMap.getOrDefault("display_name", mMap.getOrDefault("displayName", node.getName()))));
-                node.setAppName(app.getName());
+                node.setAppName(appName);
                 node.setIcon(mMap.get("icon") != null ? mMap.get("icon").toString() : "Grid");
                 node.setModel(mMap.get("model") != null ? mMap.get("model").toString() : null);
                 node.setView(mMap.get("view") != null ? mMap.get("view").toString() : null);
@@ -180,18 +215,46 @@ public class MetaGovernanceAppService {
                 } else if (mMap.get("parentId") != null) {
                     node.setParentId(mMap.get("parentId").toString());
                 }
-                uiRepo.saveMenu(node);
+                menus.add(node);
             }
-        } else {
-            ensureDefaultMenusForApp(app, batchSnapshots);
         }
+        return menus;
+    }
 
-        memoryRegistry.reloadAll();
-        return Map.of(
-                "app", app,
-                "importedModels", importedModels,
-                "autoPublished", autoPublish
-        );
+    private record PendingUi(AppAggregate app, List<UiViewDef> views, List<MenuNode> menus) {}
+
+    private void stagePackageUi(AppAggregate app, List<UiViewDef> views, List<MenuNode> menus,
+                                Map<String, ModelVersion> draftsByModel) {
+        String firstModel = draftsByModel.keySet().iterator().next();
+        for (Map.Entry<String, ModelVersion> entry : draftsByModel.entrySet()) {
+            String model = entry.getKey();
+            boolean first = firstModel.equals(model);
+            List<UiViewDef> modelViews = views.stream().filter(v -> model.equals(v.getModel())
+                    || (first && !draftsByModel.containsKey(v.getModel()))).toList();
+            List<MenuNode> modelMenus = menus.stream().filter(m -> model.equals(m.getModel())
+                    || m.getModel() == null || m.getModel().isBlank()
+                    || (first && !draftsByModel.containsKey(m.getModel()))).toList();
+            ModelVersion draft = entry.getValue();
+            try {
+                draft.setPendingUiJson(objectMapper.writeValueAsString(new PendingUi(app, modelViews, modelMenus)));
+            } catch (Exception e) {
+                throw DomainException.invalidParams("无法保存应用配置草稿");
+            }
+            modelRepo.saveVersion(draft);
+        }
+    }
+
+    private void publishPendingUi(ModelVersion version) {
+        if (version.getPendingUiJson() == null) return;
+        PendingUi pending;
+        try {
+            pending = objectMapper.readValue(version.getPendingUiJson(), PendingUi.class);
+        } catch (Exception e) {
+            throw DomainException.invalidParams("无法读取应用配置草稿");
+        }
+        saveApp(pending.app());
+        pending.views().forEach(uiRepo::saveView);
+        pending.menus().forEach(uiRepo::saveMenu);
     }
 
     private void registerRollbackReloadGuard() {
@@ -292,9 +355,7 @@ public class MetaGovernanceAppService {
             m.setCreateDate(now);
             return m;
         });
-        agg.setDisplayName(snapshot.getDisplayName() != null ? snapshot.getDisplayName() : snapshot.getName());
-        agg.setAppName(snapshot.getAppName());
-        agg.setTableName(snapshot.resolvedTableName());
+        if (agg.getActiveVersionId() == null) applyModelMetadata(agg, snapshot);
         agg.setUpdateDate(now);
         modelRepo.saveModel(agg);
 
@@ -395,7 +456,7 @@ public class MetaGovernanceAppService {
         long existingCount = (activeVer != null && activeVer.getSnapshot() != null)
                 ? safeCountRecords(activeVer.getSnapshot()) : 0L;
 
-        String hash = sha256(candidate.getId() + "|" + candidate.getSnapshotJson());
+        String hash = sha256(candidate.getId() + "|" + candidate.getSnapshotJson() + "|" + candidate.getPendingUiJson());
         ImpactReport report = refAnalyzer.analyzeImpact(activeVer, candidate, existingViews, otherModels, existingCount, hash);
         if (!syntaxErrors.isEmpty()) {
             report.getBlockingReasons().addAll(0, syntaxErrors);
@@ -428,10 +489,14 @@ public class MetaGovernanceAppService {
                 .orElseThrow(() -> DomainException.invalidParams("目标版本不存在: " + versionId));
 
         String previousActiveId = agg.getActiveVersionId();
-        agg.activateVersion(target, expectedHash);
-
         Map<String, ModelSnapshot> rawAll = collectRawActiveSnapshots();
         ModelSnapshot rawTarget = target.getSnapshot();
+        ModelSnapshot previous = rawAll.get(modelName);
+        if (previous != null && refAnalyzer.changesPhysicalTable(previous, rawTarget)) {
+            throw DomainException.impactBlocked("已发布模型的物理表名称不能直接修改",
+                    List.of("须先迁移存量数据"));
+        }
+        agg.activateVersion(target, expectedHash);
         rawAll.put(modelName, rawTarget);
 
         // 1. 同步物理表 DDL（跳过抽象父模型与扩展包本身；对具体模型或被扩展的宿主模型同步完整继承合并表结构）
@@ -463,6 +528,7 @@ public class MetaGovernanceAppService {
             });
         }
         modelRepo.saveVersion(target);
+        applyModelMetadata(agg, rawTarget);
         agg.setUpdateDate(nowStr());
         modelRepo.saveModel(agg);
 
@@ -478,6 +544,7 @@ public class MetaGovernanceAppService {
         pr.setOperatedAt(nowStr());
         govRepo.savePublishRecord(pr);
 
+        publishPendingUi(target);
         // 4. 自动确保默认三件套视图与菜单就绪（抽象模型及扩展包除外）
         if (!rawTarget.isAbstractModel() && !rawTarget.isExtensionPackage()) {
             if (uiRepo.findViewsByModel(modelName).isEmpty()) {
@@ -513,6 +580,12 @@ public class MetaGovernanceAppService {
         }
 
         String previousActiveId = agg.getActiveVersionId();
+        if (previousActiveId != null) {
+            ModelSnapshot previous = modelRepo.findVersionById(previousActiveId).map(ModelVersion::getSnapshot).orElse(null);
+            if (previous != null && refAnalyzer.changesPhysicalTable(previous, target.getSnapshot())) {
+                throw DomainException.stateGuardFailed("回滚版本对应不同的物理表，须先核对并迁移存量数据");
+            }
+        }
         agg.activateVersion(target, null);
         if (previousActiveId != null && !previousActiveId.equals(target.getId())) {
             modelRepo.findVersionById(previousActiveId).ifPresent(prev -> {
@@ -521,6 +594,7 @@ public class MetaGovernanceAppService {
             });
         }
         modelRepo.saveVersion(target);
+        applyModelMetadata(agg, target.getSnapshot());
         agg.setUpdateDate(nowStr());
         modelRepo.saveModel(agg);
 
@@ -746,6 +820,12 @@ public class MetaGovernanceAppService {
                 }
             }
         }
+    }
+
+    private void applyModelMetadata(ModelAggregate model, ModelSnapshot snapshot) {
+        model.setDisplayName(snapshot.getDisplayName() != null ? snapshot.getDisplayName() : snapshot.getName());
+        model.setAppName(snapshot.getAppName());
+        model.setTableName(snapshot.resolvedTableName());
     }
 
     private void ensureAppExists(String appName) {

@@ -54,6 +54,7 @@ public class SqliteSchemaInitializer {
                 "version_no TEXT NOT NULL, " +
                 "status TEXT NOT NULL, " +
                 "snapshot_json TEXT NOT NULL, " +
+                "pending_ui_json TEXT, " +
                 "validation_hash TEXT, " +
                 "validated_at TEXT, " +
                 "created_by TEXT, " +
@@ -225,6 +226,7 @@ public class SqliteSchemaInitializer {
                 "org_type TEXT DEFAULT 'DEPT', " +
                 "sequence INTEGER DEFAULT 10)");
 
+        ensureColumn("meta_model_version", "pending_ui_json", "TEXT");
         ensureColumn("rbac_user", "org_id", "TEXT DEFAULT 'org_root'");
         ensureColumn("rbac_user", "phone", "TEXT");
         ensureColumn("rbac_user", "email", "TEXT");

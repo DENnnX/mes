@@ -38,6 +38,8 @@
           "orderBy": { "type": "string", "default": "create_date desc" },
           "displayFormat": { "type": "string" },
           "dataScope": { "type": "string", "enum": ["ALL", "SELF"], "default": "ALL" },
+          "validateWritesWithActiveVersion": { "type": "boolean", "default": false, "description": "跨历史单据版本使用当前活动版本的写入校验服务" },
+          "useActiveVersionForRecords": { "type": "boolean", "default": false, "description": "对历史记录执行当前活动版本的字段和服务契约，保留原版本绑定" },
           "indexes": {
             "type": "array",
             "items": {

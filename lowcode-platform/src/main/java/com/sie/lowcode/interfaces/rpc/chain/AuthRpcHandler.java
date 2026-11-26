@@ -6,22 +6,12 @@ import com.sie.lowcode.domain.shared.DomainException;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
-import java.util.Optional;
-import java.util.Set;
-
 /**
  * 责任链第 1 环：统一 Token 身份鉴权（对标 AppAuthRpcHandler / AuthCodeRpcHandler）。
  */
 @Component
 @Order(10)
 public class AuthRpcHandler implements RpcHandler {
-    private static final Set<String> WHITELIST = Set.of(
-            "rbac_user.login",
-            "rbac_user.logout",
-            "auth.login",
-            "sys_portal.publicApps"
-    );
-
     private final IamAppService iamAppService;
 
     public AuthRpcHandler(IamAppService iamAppService) {
@@ -30,9 +20,11 @@ public class AuthRpcHandler implements RpcHandler {
 
     @Override
     public Object handle(RpcRequestContext ctx, Chain next) {
-        String key = ctx.getModel() + "." + ctx.getService();
-        if (ctx.isOpenEndpoint() || WHITELIST.contains(key)) {
+        if (ctx.isAnonymousService()) {
             return next.proceed(ctx);
+        }
+        if (ctx.isOpenEndpoint()) {
+            throw DomainException.permissionDenied("此服务需要通过认证接口调用");
         }
 
         String token = ctx.getAuthorizationHeader();

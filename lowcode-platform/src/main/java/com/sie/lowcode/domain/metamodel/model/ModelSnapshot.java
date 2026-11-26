@@ -25,6 +25,8 @@ public class ModelSnapshot {
     private String orderBy = "create_date desc";
     private String displayFormat;
     private String dataScope = "ALL"; // ALL | SELF
+    private boolean validateWritesWithActiveVersion;
+    private boolean useActiveVersionForRecords;
     private List<IndexDef> indexes = new ArrayList<>();
     private List<PropertyDef> properties = new ArrayList<>();
     private List<ServiceDef> services = new ArrayList<>();
@@ -104,6 +106,10 @@ public class ModelSnapshot {
     public void setDisplayFormat(String displayFormat) { this.displayFormat = displayFormat; }
     public String getDataScope() { return dataScope; }
     public void setDataScope(String dataScope) { this.dataScope = dataScope; }
+    public boolean isValidateWritesWithActiveVersion() { return validateWritesWithActiveVersion; }
+    public void setValidateWritesWithActiveVersion(boolean enabled) { this.validateWritesWithActiveVersion = enabled; }
+    public boolean isUseActiveVersionForRecords() { return useActiveVersionForRecords; }
+    public void setUseActiveVersionForRecords(boolean enabled) { this.useActiveVersionForRecords = enabled; }
     public List<IndexDef> getIndexes() { return indexes; }
     public void setIndexes(List<IndexDef> indexes) { this.indexes = indexes != null ? indexes : new ArrayList<>(); }
     public List<PropertyDef> getProperties() { return properties; }
