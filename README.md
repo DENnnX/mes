@@ -11,9 +11,13 @@
 ```text
 .
 ├── README.md                         # 项目说明与部署指南
+├── frontend/                         # 独立 Vue 3 前端工程（Vite + Vue Router + Pinia + Element Plus SFC）
+│   ├── package.json                  # 前端依赖与 dev / build / build:sync 脚本
+│   ├── vite.config.js                # Vite 构建配置与 8088 后端 API/RPC 开发代理
+│   └── src/                          # 模块化视图、Pinia 状态仓库、路由与业务组件
 ├── docs/                             # 架构设计文档（SRS / DDD / 状态机 / JSON-RPC 契约）
 ├── schemas/app-package-schema.json   # 应用配置包 JSON Schema 规范
-└── lowcode-platform/                 # 核心源码工程（Maven + Spring Boot + Vue 3 SPA）
+└── lowcode-platform/                 # 核心后端工程（Maven + Spring Boot + DDD + SQLite + Groovy）
     ├── pom.xml                       # Maven 构建与依赖配置（Java 17）
     ├── Dockerfile                    # Docker 镜像构建文件
     ├── docker-compose.yml            # Docker Compose 编排配置（默认端口 8088）
@@ -25,7 +29,7 @@
         │   └── infrastructure/       # 动态 SQL/DDL 引擎、SQLite 仓储、Groovy 执行器、内存容器
         ├── main/resources/
         │   ├── application.properties
-        │   └── static/index.html     # 独立登录页 + 管理后台 + 动态应用使用端前端单页应用
+        │   └── static/               # 由 frontend 执行 npm run build:sync 自动产出的前端打包资源
         └── test/java/...             # 8 项端到端集成测试
 ```
 
@@ -52,17 +56,19 @@
 
 ### 环境前提
 
-| 工具 | 最低版本要求 | 说明 |
-| :--- | :--- | :--- |
+| 工具                              | 最低版本要求                    | 说明                                   |
+| :-------------------------------- | :------------------------------ | :------------------------------------- |
 | **JDK** | `17+` | 运行与编译 Java 后端 |
 | **Maven** | `3.8+` | 构建项目并运行集成测试（生成 Fat JAR） |
+| **Node.js & npm** | Node `18+` / npm `9+` | 运行或打包 `frontend/` Vue 3 前端工程（如仅用仓库已同步产物可直接打后端包） |
 | **Docker & Docker Compose** | Docker Engine 20+ / Compose v2+ | 方式一容器化一键部署需要 |
 
 ### 0. 获取代码
 
 ```bash
 git clone https://github.com/wonderful-sf/mes.git
-cd mes/lowcode-platform
+cd mes/frontend && npm install && npm run build:sync
+cd ../lowcode-platform
 ```
 
 ---
@@ -141,8 +147,8 @@ java -Dserver.port=8089 -DDB_PATH=./my-data/lowcode.db -jar target/lowcode-platf
 
 ### 1. 内置体验账号（默认密码均为 `123456`）
 
-| 用户名 | 密码 | 角色定位 | 典型用途 |
-| :--- | :--- | :--- | :--- |
+| 用户名    | 密码       | 角色定位                                         | 典型用途                                                                                              |
+| :-------- | :--------- | :----------------------------------------------- | :---------------------------------------------------------------------------------------------------- |
 | `admin` | `123456` | 统一系统管理员（全量管理 + 建模发布 + 安全清理） | 管理企业租户、分配应用授权、维护账号权限、设计/发布数据表及审批彻底销毁，可登录「管理中心」与全部应用 |
 | `user` | `123456` | 示例业务用户（根租户普通操作员） | 仅进入「应用使用端」操作已开放的单据与页面，无权进入「管理中心」 |
 
