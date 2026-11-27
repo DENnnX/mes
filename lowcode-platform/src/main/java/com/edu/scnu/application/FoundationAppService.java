@@ -149,8 +149,7 @@ public class FoundationAppService {
                     perm("ui_*:*", "UI 动态菜单与视图加载 (ui_*:*)", "ui_*:*"),
                     perm("meta_dict:*", "数据字典管理 (meta_dict:*)", "meta_dict:*"),
                     perm("meta_code_rule:*", "编码规则管理 (meta_code_rule:*)", "meta_code_rule:*"),
-                    perm("meta_file:*", "附件上传下载 (meta_file:*)", "meta_file:*"),
-                    perm("api_doc:*", "接口文档查看 (api_doc:*)", "api_doc:*")
+                    perm("meta_file:*", "附件上传下载 (meta_file:*)", "meta_file:*")
             )));
 
             groups.add(permissionGroup("builtin_wildcard", "业务模型通用操作通配符", List.of(

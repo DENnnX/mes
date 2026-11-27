@@ -32,16 +32,13 @@ export function isBuiltInRole(code) {
 export function lifecycleTagType(state) {
   if (state === 'ONLINE_ACTIVE') return 'success';
   if (state === 'OFFLINE') return 'warning';
-  if (state === 'PURGE_PENDING') return 'danger';
   return 'info';
 }
 
 export function friendlyLifecycleLabel(state) {
   const m = {
     ONLINE_ACTIVE: '已上线启用',
-    OFFLINE: '已停用',
-    PURGE_PENDING: '待审核清理',
-    PURGED: '已清理'
+    OFFLINE: '已停用'
   };
   return m[state] || state;
 }

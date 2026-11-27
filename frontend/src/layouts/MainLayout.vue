@@ -95,16 +95,7 @@
               <el-icon><Ticket /></el-icon><span>自动编号规则</span>
             </button>
 
-            <div class="lc-side-section">安全治理与扩展工具</div>
-            <button type="button" class="lc-nav-item" :class="{ active: appStore.studioTab === 'governance' }" @click="switchStudioTab('governance')">
-              <el-icon><Lock /></el-icon><span>停用与安全清理</span>
-            </button>
-            <button type="button" class="lc-nav-item" :class="{ active: appStore.studioTab === 'api_doc' }" @click="switchStudioTab('api_doc')">
-              <el-icon><Reading /></el-icon><span>开放接口文档</span>
-            </button>
-            <button type="button" class="lc-nav-item" :class="{ active: appStore.studioTab === 'rpc_console' }" @click="switchStudioTab('rpc_console')">
-              <el-icon><Promotion /></el-icon><span>接口调试工具</span>
-            </button>
+
           </div>
         </template>
 

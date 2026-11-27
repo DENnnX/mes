@@ -180,14 +180,6 @@ public class ExecuteMetaRpcHandler implements RpcHandler {
         if ("meta_file".equals(model) && ("listFiles".equals(service) || "search".equals(service))) {
             return foundationAppService.listFiles();
         }
-        if ("api_doc".equals(model)) {
-            if ("listCatalog".equals(service)) {
-                return foundationAppService.listApiCatalog();
-            }
-            if ("describeModel".equals(service)) {
-                return foundationAppService.describeModelApi(str(args.get("modelName")));
-            }
-        }
 
         // 2. UI 动态菜单与视图契约入口（无需依赖物理表）
         if ("ui_menu".equals(model)) {

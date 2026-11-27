@@ -35,10 +35,9 @@
         </div>
       </div>
       <div class="lc-stat-box">
-        <div class="lc-stat-label">可用菜单页 / 待审清理</div>
+        <div class="lc-stat-label">可用菜单页</div>
         <div class="lc-stat-value">
           {{ appStore.runtimeLeafMenusCount }}
-          <span style="font-size:13px;color:var(--text-muted);font-weight:400;">/ {{ appStore.pendingPurgeCount }}</span>
         </div>
       </div>
     </div>

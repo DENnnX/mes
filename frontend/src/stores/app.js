@@ -11,10 +11,7 @@ export const STUDIO_TITLES = {
   views_menus: '页面与菜单编排',
   iam: '租户与应用授权',
   dict: '常用选项字典',
-  code_rule: '自动编号规则',
-  governance: '停用与安全清理',
-  api_doc: '开放接口文档',
-  rpc_console: '接口调试工具'
+  code_rule: '自动编号规则'
 };
 
 export const useAppStore = defineStore('app', () => {
@@ -34,10 +31,7 @@ export const useAppStore = defineStore('app', () => {
   const tenantsList = ref([]);
   const dictTypes = ref([]);
   const codeRules = ref([]);
-  const purgeApplies = ref([]);
-  const purgeAudits = ref([]);
   const assignableMenuGroups = ref([]);
-  const lastExportTickets = reactive({});
 
   // Shared cross-view designer / version center / package drawer state
   const designerDialogState = reactive({
@@ -51,11 +45,6 @@ export const useAppStore = defineStore('app', () => {
     impact: null
   });
   const appCreateDialogTrigger = ref(0);
-  const rpcConsolePreset = reactive({
-    model: 'meta_model',
-    service: 'listModels',
-    argsText: '{}'
-  });
 
   const greetingText = computed(() => {
     const h = new Date().getHours();
@@ -67,7 +56,6 @@ export const useAppStore = defineStore('app', () => {
   const businessAppsOnly = computed(() => appsList.value.filter((a) => a.name !== 'platform_kernel'));
   const businessModels = computed(() => modelsSummary.value.filter((m) => !m.kernelModel));
   const kernelModels = computed(() => modelsSummary.value.filter((m) => m.kernelModel));
-  const pendingPurgeCount = computed(() => purgeApplies.value.filter((a) => a.status === 'PENDING').length);
   const runtimeLeafMenusCount = computed(() =>
     runtimeNavigation.value.filter(({ node }) => !!node.routePath || !!node.model).length
   );
@@ -203,37 +191,20 @@ export const useAppStore = defineStore('app', () => {
   async function loadStudioOverview() {
     if (!authStore.canAccessStudio) return;
     try {
-      const [apps, models, applies, dts, crs, tns] = await Promise.all([
+      const [apps, models, dts, crs, tns] = await Promise.all([
         rpcCall('meta_app', 'list', {}),
         rpcCall('meta_model', 'listModels', {}),
-        rpcCall('meta_model', 'listPurgeApplies', {}),
         rpcCall('meta_dict', 'listTypes', {}).catch(() => []),
         rpcCall('meta_code_rule', 'listRules', {}).catch(() => []),
         rpcCall('rbac_tenant', 'listTenants', {}).catch(() => [])
       ]);
       appsList.value = apps || [];
       modelsSummary.value = models || [];
-      purgeApplies.value = applies || [];
       dictTypes.value = dts || [];
       codeRules.value = crs || [];
       tenantsList.value = tns || [];
     } catch (e) {
       ElMessage.error('加载平台数据失败：' + e.message);
-    }
-  }
-
-  async function loadGovernanceLists() {
-    try {
-      const [models, applies, audits] = await Promise.all([
-        rpcCall('meta_model', 'listModels', {}),
-        rpcCall('meta_model', 'listPurgeApplies', {}),
-        rpcCall('meta_model', 'listPurgeAudits', {})
-      ]);
-      modelsSummary.value = models || [];
-      purgeApplies.value = applies || [];
-      purgeAudits.value = audits || [];
-    } catch (e) {
-      ElMessage.error(e.message);
     }
   }
 
@@ -304,19 +275,14 @@ export const useAppStore = defineStore('app', () => {
     tenantsList,
     dictTypes,
     codeRules,
-    purgeApplies,
-    purgeAudits,
     assignableMenuGroups,
-    lastExportTickets,
     designerDialogState,
     versionCenterState,
     appCreateDialogTrigger,
-    rpcConsolePreset,
     greetingText,
     businessAppsOnly,
     businessModels,
     kernelModels,
-    pendingPurgeCount,
     runtimeLeafMenusCount,
     assignableApps,
     applyTheme,
@@ -333,7 +299,6 @@ export const useAppStore = defineStore('app', () => {
     loadMenuTree,
     loadPublishTimeline,
     loadStudioOverview,
-    loadGovernanceLists,
     loadDictTypes,
     loadCodeRules,
     loadTenants,

@@ -114,7 +114,7 @@ public class PlatformKernelBootstrap {
                     "*:search", "*:count", "*:exists", "*:find", "*:create", "*:update", "*:delete",
                     "*:lookup", "*:action", "*:addMissingDefaultValues", "*:getSelectionOptions",
                     "ui_*:*", "meta_dict:itemsByType", "meta_dict:listTypes", "meta_code_rule:generateCode",
-                    "meta_file:*", "api_doc:*", "rbac_org:listOrgs"));
+                    "meta_file:*", "rbac_org:listOrgs"));
             iamAppService.saveRole(userRole);
         }
 
@@ -347,16 +347,8 @@ public class PlatformKernelBootstrap {
                 govService.onlineModel(str(args.get("modelName"))));
         ext.registerOverride("meta_model", "exportData", "kernel", (rs, args) ->
                 govService.exportModelData(str(args.get("modelName"))));
-        ext.registerOverride("meta_model", "applyPurge", "kernel", (rs, args) ->
-                govService.applyPurge(str(args.get("modelName")), str(args.get("exportTicket"))));
-        ext.registerOverride("meta_model", "confirmPurge", "kernel", (rs, args) ->
-                govService.confirmPurge(str(args.get("applyId"))));
-        ext.registerOverride("meta_model", "rejectPurge", "kernel", (rs, args) ->
-                govService.rejectPurge(str(args.get("applyId")), str(args.get("reason"))));
         ext.registerOverride("meta_model", "listPublishRecords", "kernel", (rs, args) ->
                 govService.listPublishRecords(str(args.get("modelName"))));
-        ext.registerOverride("meta_model", "listPurgeApplies", "kernel", (rs, args) -> govService.listPurgeApplies());
-        ext.registerOverride("meta_model", "listPurgeAudits", "kernel", (rs, args) -> govService.listPurgeAudits());
     }
 
     private String str(Object o) {
