@@ -53,9 +53,9 @@ public class PermissionRpcHandler implements RpcHandler {
         MetaContext meta = ctx.getMetaContext();
         boolean isRootAdmin = MetaContext.DEFAULT_TENANT.equals(meta.getTenantId()) && meta.isSuperUser();
 
-        // 多租户应用授权守卫：非平台根管理员访问业务模型时，强制校验所属租户是否已获该应用授权
+        // 多租户应用授权守卫：所有租户（含平台根租户）访问业务模型时，强制校验所属租户是否已获该应用授权
         ModelSnapshot snap = registry.getActiveSnapshotOrNull(ctx.getModel());
-        if (!isRootAdmin && snap != null && snap.getAppName() != null
+        if (snap != null && snap.getAppName() != null
                 && !"platform_kernel".equals(snap.getAppName())
                 && !iamAppService.isAppAuthorizedForTenant(meta.getTenantId(), snap.getAppName())) {
             throw DomainException.permissionDenied(

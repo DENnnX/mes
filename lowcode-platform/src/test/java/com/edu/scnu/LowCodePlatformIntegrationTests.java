@@ -1334,6 +1334,45 @@ public class LowCodePlatformIntegrationTests {
         assertThat(retained.intValue()).isEqualTo(1);
     }
 
+    @Test
+    @Order(11)
+    @SuppressWarnings("unchecked")
+    void testRootTenantRespectsCheckedAppsAndMenusForAdmin() {
+        try {
+            requireResult(rpcCall(adminToken, "rbac_tenant", "authorizeApps", Map.of(
+                    "tenantId", "rbac_tenant_root",
+                    "authorizedApps", List.of("foundation_qa_app"),
+                    "authorizedMenus", List.of("*"))));
+
+            Map<String, Object> profile = requireResult(rpcCall(adminToken, "rbac_user", "profile", null));
+            List<Map<String, Object>> authApps = (List<Map<String, Object>>) profile.get("authorizedApps");
+            assertThat(authApps).extracting(a -> a.get("name")).containsExactly("foundation_qa_app");
+
+            List<String> adminMenus = flattenMenuNames(requireResult(rpcCall(adminToken, "ui_menu", "loadMenu", null)));
+            assertThat(adminMenus).doesNotContain("mes_work_order_menu", "mes_material_menu");
+
+            requireError(rpcCall(adminToken, "ui_view", "loadView", Map.of("model", "mes_work_order")), -32001);
+            requireError(rpcCall(adminToken, "mes_work_order", "search", null), -32001);
+
+            List<Map<String, Object>> assignable = requireResult(rpcCall(adminToken, "ui_menu", "listAssignableMenus", null));
+            assertThat(assignable).extracting(g -> g.get("appName")).contains("foundation_qa_app", "mes_manufacturing");
+
+            requireResult(rpcCall(adminToken, "rbac_tenant", "authorizeApps", Map.of(
+                    "tenantId", "rbac_tenant_root",
+                    "authorizedApps", List.of(),
+                    "authorizedMenus", List.of("*"))));
+            Map<String, Object> emptyLogin = requireResult(rpcCall(null, "rbac_user", "login",
+                    Map.of("username", "admin", "password", "123456")));
+            assertThat((List<?>) emptyLogin.get("authorizedApps")).isEmpty();
+            assertThat(emptyLogin.get("canAccessStudio")).isEqualTo(true);
+        } finally {
+            requireResult(rpcCall(adminToken, "rbac_tenant", "authorizeApps", Map.of(
+                    "tenantId", "rbac_tenant_root",
+                    "authorizedApps", List.of("*"),
+                    "authorizedMenus", List.of("*"))));
+        }
+    }
+
     private Object gridHeader(Map<String, Object> viewResponse) {
         Map<?, ?> grid = (Map<?, ?>) ((Map<?, ?>) viewResponse.get("views")).get("grid");
         List<?> columns = (List<?>) ((Map<?, ?>) grid.get("body")).get("columns");

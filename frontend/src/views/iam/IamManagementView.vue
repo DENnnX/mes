@@ -182,7 +182,7 @@
     <!-- 应用与菜单勾选分发弹窗 -->
     <el-dialog v-model="authAppsDialog.visible" :title="'设置应用与菜单授权：' + authAppsDialog.tenantName" width="600px" destroy-on-close>
       <el-alert
-        :title="authStore.isSystemAdmin ? '勾选允许该租户员工登录与访问的业务应用，并可按需精细勾选开放的具体功能菜单（admin 亦可作为兜底分发）。' : '仅可向下属分站转授本总部已获授权的应用，并直接勾选要开放的具体菜单（如只开放「包裹入库与取件」和「问题件处理单」，隐藏「货架区位档案」）。'"
+        :title="authStore.isSystemAdmin ? '勾选允许该租户（含默认平台根租户及 admin 工作区）登录与访问的业务应用，并可按需精细勾选开放的具体功能菜单。' : '仅可向下属分站转授本总部已获授权的应用，并直接勾选要开放的具体菜单（如只开放「包裹入库与取件」和「问题件处理单」，隐藏「货架区位档案」）。'"
         type="info"
         :closable="false"
         style="margin-bottom:12px;"
@@ -536,6 +536,12 @@ async function saveAuthApps() {
     ElMessage.success('应用与菜单授权已生效');
     authAppsDialog.visible = false;
     await appStore.loadTenants();
+    if (authAppsDialog.tenantId === authStore.currentUser?.tenantId) {
+      await Promise.all([authStore.refreshProfile(), appStore.loadMenuTree()]);
+      appStore.openTabs = appStore.openTabs.filter(
+        (t) => t.mode !== 'runtime' || !!appStore.findMenuNode('', t.key)
+      );
+    }
   } catch (e) {
     ElMessage.error(e.message);
   }

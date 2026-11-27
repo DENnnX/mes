@@ -124,8 +124,8 @@ public class UiSchemaAppService {
      * 按当前操作者自身被授权的范围，返回可继续向下级分站或角色分发的应用与激活叶子菜单分组。
      */
     public List<Map<String, Object>> listAssignableMenus() {
-        Set<String> allowedApps = resolveTenantAllowedApps();
-        Set<String> allowedMenus = resolveEffectiveAllowedMenus();
+        Set<String> allowedApps = isRootAdminCaller() ? null : resolveTenantAllowedApps();
+        Set<String> allowedMenus = isRootAdminCaller() ? null : resolveEffectiveAllowedMenus();
 
         Map<String, String> appDisplayNames = new LinkedHashMap<>();
         for (Map<String, Object> ap : iamAppService.listPublicApps()) {
@@ -340,24 +340,26 @@ public class UiSchemaAppService {
         return menu;
     }
 
+    private boolean isRootAdminCaller() {
+        MetaContext ctx = MetaContext.current();
+        return ctx != null && MetaContext.DEFAULT_TENANT.equals(ctx.getTenantId()) && ctx.isSuperUser();
+    }
+
     private Set<String> resolveTenantAllowedApps() {
         MetaContext ctx = MetaContext.current();
         if (ctx == null) return null;
-        if (MetaContext.DEFAULT_TENANT.equals(ctx.getTenantId()) && ctx.isSuperUser()) {
-            return null;
-        }
         return iamAppService.resolveAllowedAppNames(ctx.getTenantId());
     }
 
     /**
      * 计算当前用户生效的菜单白名单（返回 null 表示按租户已授权应用展示全部激活菜单）：
-     * 1) 租户级 authorizedMenus（递归继承上级分站限制）与
+     * 1) 租户级 authorizedMenus（递归继承上级分站限制，默认平台根租户同样受自身勾选约束）与
      * 2) 用户所分配角色中的显式 allowedMenus（多受限角色取并集）
      * 二者均存在限制时取交集，防止越过上级分站或自身角色越权查看/打开页面。
      */
     private Set<String> resolveEffectiveAllowedMenus() {
         MetaContext ctx = MetaContext.current();
-        if (ctx == null || (MetaContext.DEFAULT_TENANT.equals(ctx.getTenantId()) && ctx.isSuperUser())) {
+        if (ctx == null) {
             return null;
         }
         Set<String> tenantMenus = iamAppService.resolveAllowedMenuNames(ctx.getTenantId());

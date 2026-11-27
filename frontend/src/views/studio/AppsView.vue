@@ -43,7 +43,7 @@
             <el-tag size="small">{{ a.version }}</el-tag>
           </div>
           <div style="font-size:12px;color:var(--text-muted);margin:6px 0;">编码：{{ a.name }} · 分类：{{ a.category }}</div>
-          <div style="font-size:12.5px;color:var(--text-regular);min-height:36px;">{{ a.description || '暂无描述' }}</div>
+          <div v-if="a.description" style="font-size:12.5px;color:var(--text-regular);min-height:36px;">{{ a.description }}</div>
           <div v-if="a.name !== 'platform_kernel'" style="margin:8px 0;">
             <span style="font-size:11.5px;color:var(--text-muted);">授权租户：</span>
             <el-tag v-for="tn in appStore.getTenantsForApp(a.name)" :key="tn.id" size="small" type="success" style="margin-right:4px;">{{ tn.name }}</el-tag>

@@ -71,6 +71,17 @@ public class RecordSet {
     private static final ThreadLocal<Map<String, Integer>> SUPER_DEPTH = ThreadLocal.withInitial(HashMap::new);
     private boolean serviceWrite;
 
+    /** Trusted model services can create or update workflow records while still running write validation. */
+    public Object createFromService(Map<String, Object> args) {
+        boolean previous = serviceWrite;
+        serviceWrite = true;
+        try {
+            return call("create", args);
+        } finally {
+            serviceWrite = previous;
+        }
+    }
+
     /** Trusted model services can update workflow fields while still running write validation. */
     public Object updateFromService(Map<String, Object> args) {
         boolean previous = serviceWrite;

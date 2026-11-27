@@ -90,7 +90,14 @@ export function parseFileCell(val) {
 export function evalEnableCondition(enableCondition, row) {
   if (!enableCondition) return true;
   try {
-    return Boolean(new Function('row', 'return Boolean(' + enableCondition + ');')(row));
+    const normalizedRow = row && typeof row === 'object' ? { ...row } : {};
+    for (const [k, v] of Object.entries(normalizedRow)) {
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        if (v.value !== undefined) normalizedRow[k] = v.value;
+        else if (v.id !== undefined) normalizedRow[k] = v.id;
+      }
+    }
+    return Boolean(new Function('row', 'return Boolean(' + enableCondition + ');')(normalizedRow));
   } catch {
     return true;
   }

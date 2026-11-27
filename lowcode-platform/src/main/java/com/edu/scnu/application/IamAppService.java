@@ -55,7 +55,7 @@ public class IamAppService {
                 || user.getRoleCodes().contains("ROLE_PUBLISHER"));
         boolean canManageTenants = isRootAdmin || user.getRoleCodes().contains("ROLE_TENANT_ADMIN");
 
-        Set<String> allowedAppNames = isRootAdmin ? null : resolveAllowedAppNames(tenantId);
+        Set<String> allowedAppNames = resolveAllowedAppNames(tenantId);
         List<Map<String, Object>> authorizedAppsDetail = buildAuthorizedAppList(allowedAppNames);
 
         if (targetApp != null && !targetApp.isBlank()) {
@@ -110,7 +110,7 @@ public class IamAppService {
                 || user.getRoleCodes().contains("ROLE_DEVELOPER")
                 || user.getRoleCodes().contains("ROLE_PUBLISHER"));
         boolean canManageTenants = isRootAdmin || user.getRoleCodes().contains("ROLE_TENANT_ADMIN");
-        Set<String> allowed = isRootAdmin ? null : resolveAllowedAppNames(tenantId);
+        Set<String> allowed = resolveAllowedAppNames(tenantId);
 
         Map<String, Object> profile = sanitizeUser(user);
         profile.put("tenant", tenant);
@@ -139,19 +139,15 @@ public class IamAppService {
 
     /**
      * 解析租户被授权访问的应用名称集合：
-     * - 返回 null 表示不受限制（默认根租户或授权清单包含 "*"）；
-     * - 其他租户严格返回显式授权清单（空列表代表 0 个应用可用，不可绕过）。
+     * - 返回 null 表示不受限制（根租户缺失或授权清单包含 "*"）；
+     * - 其他情况严格返回显式授权清单（空列表代表 0 个应用可用，包括默认平台根租户未勾选任何应用时）。
      */
     public Set<String> resolveAllowedAppNames(String tenantId) {
         String tid = (tenantId == null || tenantId.isBlank()) ? MetaContext.DEFAULT_TENANT : tenantId;
         Optional<TenantDef> tOpt = findTenantById(tid);
-        if (MetaContext.DEFAULT_TENANT.equals(tid)) {
-            if (tOpt.isEmpty() || tOpt.get().getAuthorizedApps().isEmpty() || tOpt.get().getAuthorizedApps().contains("*")) {
-                return null;
-            }
-            return new LinkedHashSet<>(tOpt.get().getAuthorizedApps());
+        if (tOpt.isEmpty()) {
+            return MetaContext.DEFAULT_TENANT.equals(tid) ? null : Collections.emptySet();
         }
-        if (tOpt.isEmpty()) return Collections.emptySet();
         List<String> apps = tOpt.get().getAuthorizedApps();
         if (apps != null && apps.contains("*")) return null;
         return apps != null ? new LinkedHashSet<>(apps) : Collections.emptySet();

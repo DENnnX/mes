@@ -222,7 +222,7 @@ public class PlatformKernelBootstrap {
         kernelApp.setDisplayName("平台开发与治理内核");
         kernelApp.setCategory("system");
         kernelApp.setVersion("3.0.0");
-        kernelApp.setDescription("对标 sie-iidp-dev-center 与 iam 的低代码自举内核应用，不含任何预设业务示例。");
+        kernelApp.setDescription("");
         govService.saveApp(kernelApp);
 
         // 注册自举内核模型（只读/治理，允许动态检索）

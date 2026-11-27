@@ -36,6 +36,7 @@ public class MetaGovernanceAppService {
     private final ModelRepository modelRepo;
     private final UiSchemaRepository uiRepo;
     private final GovernanceRepository govRepo;
+    private final FoundationRepository foundationRepo;
     private final DynamicDataAccessor dataAccessor;
     private final MetaContainerMemoryRegistry memoryRegistry;
     private final ObjectMapper objectMapper;
@@ -49,6 +50,7 @@ public class MetaGovernanceAppService {
                                     ModelRepository modelRepo,
                                     UiSchemaRepository uiRepo,
                                     GovernanceRepository govRepo,
+                                    FoundationRepository foundationRepo,
                                     DynamicDataAccessor dataAccessor,
                                     MetaContainerMemoryRegistry memoryRegistry,
                                     ObjectMapper objectMapper) {
@@ -56,6 +58,7 @@ public class MetaGovernanceAppService {
         this.modelRepo = modelRepo;
         this.uiRepo = uiRepo;
         this.govRepo = govRepo;
+        this.foundationRepo = foundationRepo;
         this.dataAccessor = dataAccessor;
         this.memoryRegistry = memoryRegistry;
         this.objectMapper = objectMapper;
@@ -120,6 +123,7 @@ public class MetaGovernanceAppService {
         List<MenuNode> menus = readPackageMenus(packageJson.get("menus"), app.getName());
         if (autoPublish) {
             saveApp(app);
+            importFoundationMetadata(packageJson);
             views.forEach(uiRepo::saveView);
         } else if (batchSnapshots.isEmpty()) {
             throw DomainException.invalidParams("草稿导入至少需要一个模型版本承载应用配置");
@@ -176,6 +180,44 @@ public class MetaGovernanceAppService {
                 "importedModels", importedModels,
                 "autoPublished", autoPublish
         );
+    }
+
+    @SuppressWarnings("unchecked")
+    private void importFoundationMetadata(Map<String, Object> packageJson) {
+        if (foundationRepo == null || packageJson == null) return;
+        if (packageJson.get("dicts") instanceof List<?> dicts) {
+            for (Object rawDict : dicts) {
+                if (!(rawDict instanceof Map<?, ?> dm)) continue;
+                DictTypeDef dt = objectMapper.convertValue(dm, DictTypeDef.class);
+                if (dt.getTypeCode() != null && !dt.getTypeCode().isBlank()) {
+                    if (dt.getId() == null) dt.setId("dt_" + dt.getTypeCode());
+                    foundationRepo.saveDictType(dt);
+                    if (dm.get("items") instanceof List<?> items) {
+                        for (Object rawItem : items) {
+                            if (!(rawItem instanceof Map<?, ?> im)) continue;
+                            DictItemDef item = objectMapper.convertValue(im, DictItemDef.class);
+                            item.setTypeCode(dt.getTypeCode());
+                            if (item.getItemValue() != null && !item.getItemValue().isBlank()) {
+                                if (item.getId() == null) {
+                                    item.setId("di_" + dt.getTypeCode().toLowerCase() + "_" + item.getItemValue().toLowerCase());
+                                }
+                                foundationRepo.saveDictItem(item);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (packageJson.get("codeRules") instanceof List<?> rules) {
+            for (Object rawRule : rules) {
+                if (!(rawRule instanceof Map<?, ?> rm)) continue;
+                CodeRuleDef rule = objectMapper.convertValue(rm, CodeRuleDef.class);
+                if (rule.getCode() != null && !rule.getCode().isBlank()) {
+                    if (rule.getId() == null) rule.setId("cr_" + rule.getCode());
+                    foundationRepo.saveCodeRule(rule);
+                }
+            }
+        }
     }
 
     private List<UiViewDef> readPackageViews(Object rawViews) {

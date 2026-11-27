@@ -284,6 +284,20 @@
           <el-select v-if="pf.dataType === 'Selection' && pf.values" v-model="serviceParamsModal.values[pf.name]" :aria-label="serviceFieldLabel(pf)" style="width:100%;">
             <el-option v-for="o in pf.values" :key="o.value" :label="o.label" :value="o.value" />
           </el-select>
+          <el-select
+            v-else-if="pf.dataType === 'ManyToOne'"
+            v-model="serviceParamsModal.values[pf.name]"
+            :aria-label="serviceFieldLabel(pf)"
+            filterable
+            clearable
+            remote
+            :remote-method="(kw) => fetchLookup(pf.name, kw, serviceParamsModal.btn?.model || activeModel, '__svc_' + pf.name)"
+            @visible-change="(vis) => { if (vis) fetchLookup(pf.name, '', serviceParamsModal.btn?.model || activeModel, '__svc_' + pf.name); }"
+            style="width:100%;"
+            placeholder="输入关键词搜索"
+          >
+            <el-option v-for="opt in (lookupOptionsMap['__svc_' + pf.name] || [])" :key="opt.value" :label="opt.label" :value="opt.value" />
+          </el-select>
           <el-input-number
             v-else-if="pf.dataType === 'Integer' || pf.dataType === 'Double'"
             v-model="serviceParamsModal.values[pf.name]"
@@ -760,12 +774,24 @@ async function executeButtonRpc(btn, row, extraParams) {
 }
 
 async function invokeConfiguredButton(btn, row) {
-  if (btn.paramsForm && btn.paramsForm.length > 0) {
+  const effectiveParams = (btn.paramsForm && btn.paramsForm.length > 0)
+    ? btn.paramsForm
+    : ((viewData.services || []).find((s) => s.name === btn.service)?.paramsSchema || []);
+  if (effectiveParams.length > 0) {
     serviceParamsModal.title = btn.name;
     serviceParamsModal.btn = btn;
     serviceParamsModal.row = row;
-    serviceParamsModal.schema = btn.paramsForm;
-    serviceParamsModal.values = {};
+    serviceParamsModal.schema = effectiveParams;
+    const initVals = {};
+    for (const pf of effectiveParams) {
+      if (row && row[pf.name] != null && row[pf.name] !== '') {
+        initVals[pf.name] = row[pf.name]?.id ?? row[pf.name];
+      }
+      if (pf.dataType === 'ManyToOne') {
+        fetchLookup(pf.name, '', btn.model || activeModel.value, '__svc_' + pf.name);
+      }
+    }
+    serviceParamsModal.values = initVals;
     serviceParamsModal.error = '';
     serviceParamsModal.submitting = false;
     serviceParamsModal.confirmed = false;
