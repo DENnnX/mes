@@ -47,6 +47,11 @@ public class SqliteAppRepository implements AppRepository {
         return list;
     }
 
+    @Override
+    public void deleteByName(String name) {
+        jdbcTemplate.update("DELETE FROM meta_app WHERE name = ?", name);
+    }
+
     private AppAggregate mapRow(Map<String, Object> r) {
         AppAggregate a = new AppAggregate();
         a.setId((String) r.get("id"));

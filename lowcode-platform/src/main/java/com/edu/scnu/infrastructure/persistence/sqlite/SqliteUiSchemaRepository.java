@@ -57,6 +57,11 @@ public class SqliteUiSchemaRepository implements UiSchemaRepository {
     }
 
     @Override
+    public void deleteViewByKey(String key) {
+        jdbcTemplate.update("DELETE FROM meta_view WHERE view_key = ? OR id = ?", key, key);
+    }
+
+    @Override
     public void deleteViewsByModel(String modelName) {
         jdbcTemplate.update("DELETE FROM meta_view WHERE model_name = ?", modelName);
     }
@@ -86,6 +91,11 @@ public class SqliteUiSchemaRepository implements UiSchemaRepository {
         List<MenuNode> res = new ArrayList<>();
         for (Map<String, Object> r : rows) res.add(mapMenu(r));
         return res;
+    }
+
+    @Override
+    public void deleteMenuByName(String name) {
+        jdbcTemplate.update("DELETE FROM meta_menu WHERE name = ? OR id = ?", name, name);
     }
 
     @Override

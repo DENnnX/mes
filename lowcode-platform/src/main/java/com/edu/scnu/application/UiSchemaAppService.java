@@ -325,6 +325,40 @@ public class UiSchemaAppService {
         return requireRuntimeMenu(menuName, modelName, resolveTenantAllowedApps(), resolveEffectiveAllowedMenus()).getFilter();
     }
 
+    public Map<String, Object> deleteView(String viewKey) {
+        if (viewKey == null || viewKey.isBlank()) {
+            throw DomainException.invalidParams("视图标识 (key) 不能为空");
+        }
+        String key = viewKey.trim();
+        UiViewDef existing = uiRepo.findViewByKey(key)
+                .orElseThrow(() -> DomainException.invalidParams("页面布局不存在: " + key));
+        uiRepo.deleteViewByKey(existing.getKey());
+        return Map.of("deleted", true, "key", existing.getKey(), "name", existing.getName());
+    }
+
+    public Map<String, Object> deleteMenu(String menuName) {
+        if (menuName == null || menuName.isBlank()) {
+            throw DomainException.invalidParams("菜单标识 (name) 不能为空");
+        }
+        String target = menuName.trim();
+        MenuNode existing = uiRepo.findMenuByName(target)
+                .orElseThrow(() -> DomainException.invalidParams("菜单不存在: " + target));
+        for (MenuNode other : uiRepo.findAllMenus()) {
+            if (!Objects.equals(other.getName(), existing.getName())
+                    && (Objects.equals(existing.getName(), other.getParentId())
+                        || Objects.equals(existing.getId(), other.getParentId()))) {
+                throw DomainException.stateGuardFailed(
+                        "菜单 [" + existing.getDisplayName() + "] 下仍存在子菜单 [" + other.getDisplayName() + "]，请先删除子菜单");
+            }
+        }
+        Set<String> keys = new LinkedHashSet<>();
+        if (existing.getName() != null) keys.add(existing.getName());
+        if (existing.getId() != null) keys.add(existing.getId());
+        uiRepo.deleteMenuByName(existing.getName());
+        iamAppService.cleanupDeletedMenuReferences(keys);
+        return Map.of("deleted", true, "name", existing.getName(), "displayName", existing.getDisplayName());
+    }
+
     private MenuNode requireRuntimeMenu(String menuName, String modelName, Set<String> allowedApps, Set<String> allowedMenus) {
         MenuNode menu = uiRepo.findMenuByName(menuName)
                 .filter(m -> m.isActive() && m.getModel() != null && !m.getModel().isBlank())

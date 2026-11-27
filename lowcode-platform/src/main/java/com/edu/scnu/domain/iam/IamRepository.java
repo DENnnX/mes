@@ -20,10 +20,12 @@ public interface IamRepository {
     Optional<TenantDef> findTenantById(String id);
     Optional<TenantDef> findTenantByCode(String code);
     void saveTenant(TenantDef tenant);
+    void deleteTenant(String tenantId);
 
     List<OrgNode> findOrgsByTenant(String tenantId);
     void saveOrg(OrgNode org);
     void deleteOrg(String orgId);
+    void deleteOrgsByTenant(String tenantId);
 
     void saveSession(String token, String userId, String expiresAt);
     Optional<String> findUserIdByToken(String token);

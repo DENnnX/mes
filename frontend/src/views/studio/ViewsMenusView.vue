@@ -17,8 +17,11 @@
           <template #default="{ row }"><el-tag size="small">{{ friendlyViewType(row.type) }}</el-tag></template>
         </el-table-column>
         <el-table-column prop="key" label="配置标识" width="190" />
-        <el-table-column label="操作" width="125">
-          <template #default="{ row }"><el-button link type="primary" size="small" @click="editViewVisual(row)">可视化设计</el-button></template>
+        <el-table-column label="操作" width="165">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="editViewVisual(row)">可视化设计</el-button>
+            <el-button link type="danger" size="small" @click="handleDeleteView(row)">删除</el-button>
+          </template>
         </el-table-column>
       </el-table>
     </div>
@@ -38,8 +41,11 @@
         <el-table-column label="启用" width="70" align="center">
           <template #default="{ row }"><el-tag size="small" :type="row.active ? 'success' : 'info'">{{ row.active ? '是' : '否' }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="操作" width="90">
-          <template #default="{ row }"><el-button link type="primary" size="small" @click="openMenuEditor(row)">编辑</el-button></template>
+        <el-table-column label="操作" width="130">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="openMenuEditor(row)">编辑</el-button>
+            <el-button link type="danger" size="small" @click="handleDeleteMenu(row)">删除</el-button>
+          </template>
         </el-table-column>
       </el-table>
     </div>
@@ -117,7 +123,7 @@
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { rpcCall } from '@/api/rpc';
 import { useAppStore } from '@/stores/app';
 import { friendlyViewType } from '@/utils/formatters';
@@ -273,6 +279,46 @@ async function saveMenuNode() {
     await loadViewsAndMenus();
   } catch (e) {
     ElMessage.error(e.message);
+  }
+}
+
+async function handleDeleteView(row) {
+  if (!row?.key) return;
+  try {
+    await ElMessageBox.confirm(
+      `确认删除页面布局「${row.name || row.key}」(${row.key}) 吗？删除后对应模型将失去该视图布局。`,
+      '删除页面布局确认',
+      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger' }
+    );
+    await rpcCall('meta_view', 'deleteView', { key: row.key });
+    ElMessage.success(`已删除页面布局「${row.name || row.key}」`);
+    await loadViewsAndMenus();
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') {
+      ElMessage.error(e.message || '删除页面布局失败');
+    }
+  }
+}
+
+async function handleDeleteMenu(row) {
+  if (!row?.name) return;
+  try {
+    await ElMessageBox.confirm(
+      `确认删除导航菜单「${row.displayName || row.name}」(${row.name}) 吗？删除后将从应用工作区侧边导航栏移除。`,
+      '删除导航菜单确认',
+      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger' }
+    );
+    await rpcCall('meta_menu', 'deleteMenu', { name: row.name });
+    await appStore.refreshMenusAndOverview();
+    appStore.openTabs = appStore.openTabs.filter(
+      (t) => t.mode !== 'runtime' || !!appStore.findMenuNode('', t.key)
+    );
+    ElMessage.success(`已删除导航菜单「${row.displayName || row.name}」`);
+    await loadViewsAndMenus();
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') {
+      ElMessage.error(e.message || '删除菜单失败');
+    }
   }
 }
 

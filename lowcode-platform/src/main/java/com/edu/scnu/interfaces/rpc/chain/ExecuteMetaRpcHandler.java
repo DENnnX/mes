@@ -111,6 +111,9 @@ public class ExecuteMetaRpcHandler implements RpcHandler {
                 TenantDef t = objectMapper.convertValue(args.get("values") != null ? args.get("values") : args, TenantDef.class);
                 return iamAppService.saveTenant(t);
             }
+            if ("deleteTenant".equals(service)) {
+                return iamAppService.deleteTenant(str(args.get("tenantId")));
+            }
             if ("authorizeApps".equals(service)) {
                 @SuppressWarnings("unchecked")
                 java.util.List<String> apps = args.get("authorizedApps") instanceof java.util.List
@@ -209,6 +212,10 @@ public class ExecuteMetaRpcHandler implements RpcHandler {
                 uiRepo.saveView(v);
                 return v;
             }
+            if ("deleteView".equals(service)) {
+                String k = str(args.get("key"));
+                return uiSchemaAppService.deleteView(k != null ? k : str(args.get("viewKey")));
+            }
         }
         if ("meta_menu".equals(model)) {
             if ("listMenus".equals(service)) {
@@ -222,6 +229,10 @@ public class ExecuteMetaRpcHandler implements RpcHandler {
                 if (mn.getId() == null) mn.setId(mn.getName());
                 uiRepo.saveMenu(mn);
                 return mn;
+            }
+            if ("deleteMenu".equals(service)) {
+                String n = str(args.get("name"));
+                return uiSchemaAppService.deleteMenu(n != null ? n : str(args.get("menuName")));
             }
         }
 

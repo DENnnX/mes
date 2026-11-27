@@ -27,11 +27,12 @@
             </template>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="230">
+        <el-table-column label="操作" width="275">
           <template #default="{ row }">
             <el-button v-if="row.name !== 'platform_kernel'" link type="primary" size="small" @click="openEditAppDialog(row)">编辑</el-button>
             <el-button link type="success" size="small" @click="exportAppJsonAndOpenDrawer(row.name)">导出配置</el-button>
             <el-button v-if="row.name !== 'platform_kernel' && authStore.isSystemAdmin" link type="warning" size="small" @click="router.push('/studio/iam')">授权管理</el-button>
+            <el-button v-if="row.name !== 'platform_kernel' && authStore.isSystemAdmin" link type="danger" size="small" @click="handleDeleteApp(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -53,6 +54,7 @@
             <el-button v-if="a.name !== 'platform_kernel'" size="small" type="primary" plain @click="jumpToAppAndSwitch(a.name)">打开使用</el-button>
             <el-button size="small" @click="exportAppJsonAndOpenDrawer(a.name)">导出配置</el-button>
             <el-button v-if="a.name !== 'platform_kernel' && authStore.isSystemAdmin" size="small" @click="router.push('/studio/iam')">授权</el-button>
+            <el-button v-if="a.name !== 'platform_kernel' && authStore.isSystemAdmin" size="small" type="danger" plain @click="handleDeleteApp(a)">删除</el-button>
           </div>
         </div>
       </div>
@@ -101,7 +103,7 @@
 <script setup>
 import { onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { rpcCall } from '@/api/rpc';
 import { useAuthStore } from '@/stores/auth';
 import { useAppStore } from '@/stores/app';
@@ -209,6 +211,35 @@ async function submitImportPackage() {
     ElMessage.error('导入失败：' + e.message);
   } finally {
     importingPkg.value = false;
+  }
+}
+
+async function handleDeleteApp(app) {
+  if (!app?.name || app.name === 'platform_kernel') return;
+  const relatedModels = appStore.businessModels.filter((m) => m.appName === app.name);
+  try {
+    await ElMessageBox.confirm(
+      `确认删除应用「${app.displayName || app.name}」(${app.name}) 吗？将同步删除其关联的 ${relatedModels.length} 张表单与数据表、全部页面视图、导航菜单及对应业务数据表，且不可恢复！`,
+      '删除应用确认',
+      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger' }
+    );
+    const res = await rpcCall('meta_app', 'deleteApp', { appName: app.name });
+    await appStore.refreshMenusAndOverview();
+    try {
+      await authStore.refreshProfile();
+    } catch {
+      // ignore
+    }
+    appStore.openTabs = appStore.openTabs.filter(
+      (t) => t.mode !== 'runtime' || !!appStore.findMenuNode('', t.key)
+    );
+    ElMessage.success(
+      `已删除应用「${app.displayName || app.name}」，同步清理 ${res.deletedModelCount ?? 0} 个表单模型、${res.deletedViewCount ?? 0} 个视图与 ${res.deletedMenuCount ?? 0} 个菜单`
+    );
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') {
+      ElMessage.error(e.message || '删除应用失败');
+    }
   }
 }
 

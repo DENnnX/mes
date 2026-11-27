@@ -116,6 +116,13 @@ public class SqliteGovernanceRepository implements GovernanceRepository {
         return list;
     }
 
+    @Override
+    public void deleteGovernanceByModel(String modelName) {
+        jdbcTemplate.update("DELETE FROM meta_publish_record WHERE model_name = ?", modelName);
+        jdbcTemplate.update("DELETE FROM meta_export_ticket WHERE model_name = ?", modelName);
+        jdbcTemplate.update("DELETE FROM meta_purge_apply WHERE model_name = ?", modelName);
+    }
+
     private PurgeApply mapPurgeApply(Map<String, Object> r) {
         PurgeApply a = new PurgeApply();
         a.setId((String) r.get("id"));

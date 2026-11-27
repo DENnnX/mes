@@ -254,6 +254,10 @@ public class OpenApiConfig {
                 "查询发布与回滚日志 (listPublishRecords)", "按可选 modelName 查询发布记录。", "rpc_meta_model_listPublishRecords",
                 Map.of("args", Map.of("modelName", "")),
                 Map.of("modelName", new StringSchema()));
+        addServiceOperation(openApi, "/{tenant}/rpc/service/meta_model/deleteModel", modelTag, true, true,
+                "删除表单与数据表 (meta_model.deleteModel)", "彻底删除指定非内核表单/数据表及其所有版本、关联视图、导航菜单和业务物理表。", "rpc_meta_model_deleteModel",
+                Map.of("args", Map.of("modelName", "custom_entity")),
+                Map.of("modelName", new StringSchema().example("custom_entity")));
 
         // 03. 应用包与视图菜单
         String viewTag = "03. 应用包与视图菜单";
@@ -271,6 +275,10 @@ public class OpenApiConfig {
                 "导入应用元数据安装包 (importPackage)", "批量导入并部署应用模型、视图与菜单。", "rpc_meta_app_importPackage",
                 Map.of("args", Map.of("packageJson", "{}")),
                 Map.of("packageJson", new Schema<>().description("应用包 JSON 对象或字符串")));
+        addServiceOperation(openApi, "/{tenant}/rpc/service/meta_app/deleteApp", viewTag, true, true,
+                "删除应用及关联表单菜单 (meta_app.deleteApp)", "彻底删除指定业务应用及其对应的模型表单、页面视图、导航菜单和业务数据表（platform_kernel 不可删除）。", "rpc_meta_app_deleteApp",
+                Map.of("args", Map.of("appName", "sample_app")),
+                Map.of("appName", new StringSchema().example("sample_app")));
 
         addServiceOperation(openApi, "/{tenant}/rpc/service/meta_view/listViews", viewTag, true, true,
                 "查询视图定义 (meta_view.listViews)", "获取所有或指定模型的 grid/form/search 视图配置。", "rpc_meta_view_listViews",
@@ -280,6 +288,10 @@ public class OpenApiConfig {
                 "保存视图定义 (meta_view.saveView)", "保存列表或表单 XML/JSON 配置。", "rpc_meta_view_saveView",
                 Map.of("args", Map.of("modelName", "mes_material", "viewType", "grid")),
                 Map.of("modelName", new StringSchema(), "viewType", new StringSchema()));
+        addServiceOperation(openApi, "/{tenant}/rpc/service/meta_view/deleteView", viewTag, true, true,
+                "删除视图布局 (meta_view.deleteView)", "按视图唯一标识 key 删除页面布局定义。", "rpc_meta_view_deleteView",
+                Map.of("args", Map.of("key", "custom_entity_grid")),
+                Map.of("key", new StringSchema()));
         addServiceOperation(openApi, "/{tenant}/rpc/service/meta_view/generateDefaultViews", viewTag, true, true,
                 "自动生成模型默认视图 (generateDefaultViews)", "根据模型生效快照一键生成列表/搜索/表单视图及菜单。", "rpc_meta_view_generateDefaultViews",
                 Map.of("args", Map.of("modelName", "mes_material")),
@@ -287,6 +299,10 @@ public class OpenApiConfig {
 
         addServiceOperation(openApi, "/{tenant}/rpc/service/meta_menu/listMenus", viewTag, true, true,
                 "查询菜单配置 (meta_menu.listMenus)", "列出所有动态路由菜单定义。", "rpc_meta_menu_listMenus", Collections.emptyMap(), Collections.emptyMap());
+        addServiceOperation(openApi, "/{tenant}/rpc/service/meta_menu/deleteMenu", viewTag, true, true,
+                "删除导航菜单 (meta_menu.deleteMenu)", "按菜单标识 name 删除导航菜单并清理授权引用。", "rpc_meta_menu_deleteMenu",
+                Map.of("args", Map.of("name", "custom_entity_menu")),
+                Map.of("name", new StringSchema()));
         addServiceOperation(openApi, "/{tenant}/rpc/service/ui_menu/loadMenu", viewTag, true, true,
                 "加载当前用户可见运行态菜单 (ui_menu.loadMenu)", "结合 RBAC 权限返回当前用户菜单树。", "rpc_ui_menu_loadMenu", Collections.emptyMap(), Collections.emptyMap());
         addServiceOperation(openApi, "/{tenant}/rpc/service/ui_view/loadView", viewTag, true, true,
@@ -312,6 +328,10 @@ public class OpenApiConfig {
                 "查询附件元数据记录 (meta_file.listFiles)", "查询当前租户上传附件清单。", "rpc_meta_file_listFiles", Collections.emptyMap(), Collections.emptyMap());
         addServiceOperation(openApi, "/{tenant}/rpc/service/rbac_tenant/search", iamTag, true, true,
                 "查询租户列表 (rbac_tenant.search)", "查询平台多租户清单。", "rpc_rbac_tenant_search", Collections.emptyMap(), Collections.emptyMap());
+        addServiceOperation(openApi, "/{tenant}/rpc/service/rbac_tenant/deleteTenant", iamTag, true, true,
+                "删除租户或分站 (rbac_tenant.deleteTenant)", "删除非根非自身租户（无下级分站时）并级联清理其部门、账号与自定义角色。", "rpc_rbac_tenant_deleteTenant",
+                Map.of("args", Map.of("tenantId", "branch_demo")),
+                Map.of("tenantId", new StringSchema()));
         addServiceOperation(openApi, "/{tenant}/rpc/service/rbac_org/listTree", iamTag, true, true,
                 "查询组织架构树 (rbac_org.listTree)", "按租户返回部门与公司组织树。", "rpc_rbac_org_listTree", Collections.emptyMap(), Collections.emptyMap());
         addServiceOperation(openApi, "/{tenant}/rpc/service/rbac_role/search", iamTag, true, true,

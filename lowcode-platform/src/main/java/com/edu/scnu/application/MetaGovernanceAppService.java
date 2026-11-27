@@ -2,6 +2,9 @@ package com.edu.scnu.application;
 
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
+import com.edu.scnu.domain.iam.IamRepository;
+import com.edu.scnu.domain.iam.RoleDef;
+import com.edu.scnu.domain.iam.TenantDef;
 import com.edu.scnu.domain.metamodel.model.*;
 import com.edu.scnu.domain.metamodel.repository.*;
 import com.edu.scnu.domain.metamodel.service.*;
@@ -37,6 +40,7 @@ public class MetaGovernanceAppService {
     private final UiSchemaRepository uiRepo;
     private final GovernanceRepository govRepo;
     private final FoundationRepository foundationRepo;
+    private final IamRepository iamRepo;
     private final DynamicDataAccessor dataAccessor;
     private final MetaContainerMemoryRegistry memoryRegistry;
     private final ObjectMapper objectMapper;
@@ -51,6 +55,7 @@ public class MetaGovernanceAppService {
                                     UiSchemaRepository uiRepo,
                                     GovernanceRepository govRepo,
                                     FoundationRepository foundationRepo,
+                                    IamRepository iamRepo,
                                     DynamicDataAccessor dataAccessor,
                                     MetaContainerMemoryRegistry memoryRegistry,
                                     ObjectMapper objectMapper) {
@@ -59,6 +64,7 @@ public class MetaGovernanceAppService {
         this.uiRepo = uiRepo;
         this.govRepo = govRepo;
         this.foundationRepo = foundationRepo;
+        this.iamRepo = iamRepo;
         this.dataAccessor = dataAccessor;
         this.memoryRegistry = memoryRegistry;
         this.objectMapper = objectMapper;
@@ -81,6 +87,245 @@ public class MetaGovernanceAppService {
         }
         appRepo.save(app);
         return app;
+    }
+
+    /**
+     * 彻底删除指定业务应用及其名下的所有数据表/表单、视图、导航菜单、版本治理记录与租户授权引用。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> deleteApp(String appName) {
+        if (appName == null || appName.isBlank()) {
+            throw DomainException.invalidParams("应用标识 (appName) 不能为空");
+        }
+        String targetApp = appName.trim();
+        if ("platform_kernel".equals(targetApp)) {
+            throw DomainException.stateGuardFailed("平台开发与治理内核 (platform_kernel) 不可删除");
+        }
+        AppAggregate app = appRepo.findByName(targetApp)
+                .orElseThrow(() -> DomainException.invalidParams("应用不存在: " + targetApp));
+        registerRollbackReloadGuard();
+
+        List<ModelAggregate> allModels = modelRepo.findAllModels();
+        List<ModelAggregate> appModels = new ArrayList<>();
+        Set<String> deletingModelNames = new LinkedHashSet<>();
+        Set<String> protectedTables = new LinkedHashSet<>();
+        for (ModelAggregate m : allModels) {
+            if (targetApp.equals(m.getAppName())) {
+                if (m.isKernelModel()) {
+                    throw DomainException.stateGuardFailed("系统基础表 [" + m.getName() + "] 不可删除");
+                }
+                appModels.add(m);
+                deletingModelNames.add(m.getName());
+            } else if (m.getLifecycleState() != ModelAggregate.LifecycleState.PURGED
+                    && m.getTableName() != null && !m.getTableName().isBlank()) {
+                protectedTables.add(m.getTableName().toLowerCase(Locale.ROOT));
+            }
+        }
+
+        validateNoExternalReferences(deletingModelNames, "应用", true);
+        ModelDeletionSummary summary = purgeModelsAndUi(appModels, deletingModelNames, protectedTables, targetApp);
+        cleanupIamReferences(targetApp, deletingModelNames, summary.deletedMenuKeys());
+
+        appRepo.deleteByName(targetApp);
+        for (String tbl : summary.tablesToDrop()) {
+            dataAccessor.dropTable(tbl);
+        }
+        memoryRegistry.reloadAll();
+
+        return Map.of(
+                "appName", targetApp,
+                "displayName", app.getDisplayName(),
+                "deletedModels", new ArrayList<>(deletingModelNames),
+                "deletedModelCount", deletingModelNames.size(),
+                "deletedViewCount", summary.deletedViewCount(),
+                "deletedMenuCount", summary.deletedMenuCount(),
+                "droppedTableCount", summary.tablesToDrop().size()
+        );
+    }
+
+    /**
+     * 彻底删除单个表单/数据表及其所有版本、关联视图、导航菜单、治理记录、权限引用与物理表。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> deleteModel(String modelName) {
+        if (modelName == null || modelName.isBlank()) {
+            throw DomainException.invalidParams("模型标识 (modelName) 不能为空");
+        }
+        String targetModel = modelName.trim();
+        ModelAggregate agg = modelRepo.findModelByName(targetModel)
+                .orElseThrow(() -> DomainException.invalidParams("表单/数据表不存在: " + targetModel));
+        if (agg.isKernelModel()) {
+            throw DomainException.stateGuardFailed("系统基础表 [" + targetModel + "] 不可删除");
+        }
+        registerRollbackReloadGuard();
+
+        Set<String> deletingModelNames = Set.of(targetModel);
+        Set<String> protectedTables = new LinkedHashSet<>();
+        for (ModelAggregate m : modelRepo.findAllModels()) {
+            if (!targetModel.equals(m.getName())
+                    && m.getLifecycleState() != ModelAggregate.LifecycleState.PURGED
+                    && m.getTableName() != null && !m.getTableName().isBlank()) {
+                protectedTables.add(m.getTableName().toLowerCase(Locale.ROOT));
+            }
+        }
+
+        validateNoExternalReferences(deletingModelNames, "表单/数据表", false);
+        ModelDeletionSummary summary = purgeModelsAndUi(List.of(agg), deletingModelNames, protectedTables, null);
+        cleanupIamReferences(null, deletingModelNames, summary.deletedMenuKeys());
+
+        for (String tbl : summary.tablesToDrop()) {
+            dataAccessor.dropTable(tbl);
+        }
+        memoryRegistry.reloadAll();
+
+        return Map.of(
+                "modelName", targetModel,
+                "displayName", agg.getDisplayName(),
+                "appName", agg.getAppName() != null ? agg.getAppName() : "",
+                "deletedViewCount", summary.deletedViewCount(),
+                "deletedMenuCount", summary.deletedMenuCount(),
+                "droppedTableCount", summary.tablesToDrop().size()
+        );
+    }
+
+    private record ModelDeletionSummary(Set<String> tablesToDrop, Set<String> deletedMenuKeys,
+                                        int deletedViewCount, int deletedMenuCount) {}
+
+    private void validateNoExternalReferences(Set<String> deletingModelNames, String targetKind, boolean onlyExternalApps) {
+        if (deletingModelNames.isEmpty()) return;
+        Map<String, ModelSnapshot> activeSnapshots = collectRawActiveSnapshots();
+        for (Map.Entry<String, ModelSnapshot> entry : activeSnapshots.entrySet()) {
+            String otherName = entry.getKey();
+            if (deletingModelNames.contains(otherName)) continue;
+            ModelSnapshot otherSnap = entry.getValue();
+            String scopeLabel = onlyExternalApps ? "外部应用 [" + otherSnap.getAppName() + "] 的" : "";
+            if (otherSnap.getExtendModel() != null && deletingModelNames.contains(otherSnap.getExtendModel())) {
+                throw DomainException.stateGuardFailed("无法删除" + targetKind + "：模型 [" + otherSnap.getExtendModel()
+                        + "] 正被" + scopeLabel + "扩展模型 [" + otherName + "] 扩展");
+            }
+            for (String parent : otherSnap.getParents()) {
+                if (deletingModelNames.contains(parent)) {
+                    throw DomainException.stateGuardFailed("无法删除" + targetKind + "：模型 [" + parent
+                            + "] 正被" + scopeLabel + "模型 [" + otherName + "] 继承");
+                }
+            }
+            for (PropertyDef p : otherSnap.getProperties()) {
+                if (p.getRelateModel() != null && deletingModelNames.contains(p.getRelateModel())) {
+                    throw DomainException.stateGuardFailed("无法删除" + targetKind + "：模型 [" + p.getRelateModel()
+                            + "] 正被" + scopeLabel + "字段 [" + otherName + "." + p.getName() + "] 关联");
+                }
+            }
+        }
+    }
+
+    private ModelDeletionSummary purgeModelsAndUi(List<ModelAggregate> deletingModels,
+                                                  Set<String> deletingModelNames,
+                                                  Set<String> protectedTables,
+                                                  String appToDeleteMenus) {
+        Set<String> tablesToDrop = new LinkedHashSet<>();
+        for (ModelAggregate m : deletingModels) {
+            List<ModelVersion> versions = modelRepo.findVersionsByModel(m.getName());
+            boolean hasConcreteVersion = false;
+            for (ModelVersion v : versions) {
+                ModelSnapshot snap = v.getSnapshot();
+                if (snap == null) continue;
+                if (!snap.isAbstractModel() && !snap.isExtensionPackage()) {
+                    hasConcreteVersion = true;
+                    String tbl = snap.resolvedTableName();
+                    if (tbl != null && !tbl.isBlank() && !protectedTables.contains(tbl.toLowerCase(Locale.ROOT))) {
+                        tablesToDrop.add(tbl);
+                    }
+                    for (PropertyDef p : snap.getProperties()) {
+                        if (p.isManyToMany()) {
+                            String jt = p.resolvedJoinTable(m.getName());
+                            if (jt != null && !jt.isBlank() && !protectedTables.contains(jt.toLowerCase(Locale.ROOT))) {
+                                tablesToDrop.add(jt);
+                            }
+                        }
+                    }
+                }
+            }
+            if (!hasConcreteVersion && versions.isEmpty() && m.getTableName() != null && !m.getTableName().isBlank()
+                    && !protectedTables.contains(m.getTableName().toLowerCase(Locale.ROOT))) {
+                tablesToDrop.add(m.getTableName());
+            }
+        }
+
+        Set<String> deletedMenuKeys = new LinkedHashSet<>();
+        int deletedMenuCount = 0;
+        for (MenuNode mn : uiRepo.findAllMenus()) {
+            boolean matchesApp = appToDeleteMenus != null && appToDeleteMenus.equals(mn.getAppName());
+            boolean matchesModel = mn.getModel() != null && deletingModelNames.contains(mn.getModel());
+            if (matchesApp || matchesModel) {
+                if (mn.getName() != null && !mn.getName().isBlank()) deletedMenuKeys.add(mn.getName());
+                if (mn.getId() != null && !mn.getId().isBlank()) deletedMenuKeys.add(mn.getId());
+                deletedMenuCount++;
+            }
+        }
+        if (appToDeleteMenus != null) {
+            uiRepo.deleteMenusByApp(appToDeleteMenus);
+        }
+        int deletedViewCount = 0;
+        for (String modelName : deletingModelNames) {
+            uiRepo.deleteMenusByModel(modelName);
+            deletedViewCount += uiRepo.findViewsByModel(modelName).size();
+            uiRepo.deleteViewsByModel(modelName);
+            modelRepo.deleteReferencesByModel(modelName);
+            modelRepo.deleteVersionsByModel(modelName);
+            govRepo.deleteGovernanceByModel(modelName);
+            modelRepo.deleteModelMeta(modelName);
+        }
+        return new ModelDeletionSummary(tablesToDrop, deletedMenuKeys, deletedViewCount, deletedMenuCount);
+    }
+
+    private void cleanupIamReferences(String appName, Set<String> deletedModels, Set<String> deletedMenuKeys) {
+        if (iamRepo == null) return;
+        for (TenantDef tenant : iamRepo.findAllTenants()) {
+            boolean changed = false;
+            if (appName != null) {
+                List<String> apps = new ArrayList<>(tenant.getAuthorizedApps());
+                if (!apps.contains("*") && apps.removeIf(a -> Objects.equals(a, appName))) {
+                    tenant.setAuthorizedApps(apps);
+                    changed = true;
+                }
+            }
+            List<String> menus = new ArrayList<>(tenant.getAuthorizedMenus());
+            if (!deletedMenuKeys.isEmpty() && !menus.isEmpty() && !menus.contains("*") && !menus.contains("__NONE__")) {
+                if (menus.removeIf(deletedMenuKeys::contains)) {
+                    tenant.setAuthorizedMenus(menus.isEmpty() ? List.of("__NONE__") : menus);
+                    changed = true;
+                }
+            }
+            if (changed) {
+                iamRepo.saveTenant(tenant);
+            }
+        }
+        for (RoleDef role : iamRepo.findAllRoles()) {
+            boolean changed = false;
+            List<String> menus = new ArrayList<>(role.getAllowedMenus());
+            if (!deletedMenuKeys.isEmpty() && !menus.isEmpty() && !menus.contains("*") && !menus.contains("__NONE__")) {
+                if (menus.removeIf(deletedMenuKeys::contains)) {
+                    role.setAllowedMenus(menus.isEmpty() ? List.of("__NONE__") : menus);
+                    changed = true;
+                }
+            }
+            Set<String> services = new LinkedHashSet<>(role.getAllowedServices());
+            if (!deletedModels.isEmpty() && !services.isEmpty()) {
+                boolean svcRemoved = services.removeIf(expr -> {
+                    if (expr == null) return false;
+                    int colon = expr.indexOf(':');
+                    if (colon <= 0) return false;
+                    return deletedModels.contains(expr.substring(0, colon));
+                });
+                if (svcRemoved) {
+                    role.setAllowedServices(services);
+                    changed = true;
+                }
+            }
+            if (changed) {
+                iamRepo.saveRole(role);
+            }
+        }
     }
 
     /**

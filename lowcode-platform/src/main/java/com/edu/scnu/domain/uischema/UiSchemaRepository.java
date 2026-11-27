@@ -8,11 +8,13 @@ public interface UiSchemaRepository {
     Optional<UiViewDef> findViewByKey(String key);
     List<UiViewDef> findViewsByModel(String modelName);
     List<UiViewDef> findAllViews();
+    void deleteViewByKey(String key);
     void deleteViewsByModel(String modelName);
 
     void saveMenu(MenuNode menu);
     Optional<MenuNode> findMenuByName(String name);
     List<MenuNode> findAllMenus();
+    void deleteMenuByName(String name);
     void deleteMenusByModel(String modelName);
     void deleteMenusByApp(String appName);
 }

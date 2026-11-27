@@ -123,7 +123,7 @@ public class PlatformKernelBootstrap {
                 "*:lookup", "*:action", "*:addMissingDefaultValues", "*:getSelectionOptions",
                 "ui_*:*", "ui_menu:listAssignableMenus", "meta_dict:itemsByType", "meta_dict:listTypes",
                 "meta_code_rule:generateCode", "meta_file:*",
-                "rbac_tenant:listTenants", "rbac_tenant:search", "rbac_tenant:saveTenant",
+                "rbac_tenant:listTenants", "rbac_tenant:search", "rbac_tenant:saveTenant", "rbac_tenant:deleteTenant",
                 "rbac_tenant:authorizeApps", "rbac_tenant:authorizeMenus",
                 "rbac_user:listUsers", "rbac_user:search", "rbac_user:saveUser", "rbac_user:resetPassword", "rbac_user:deleteUser",
                 "rbac_org:*",
@@ -325,6 +325,8 @@ public class PlatformKernelBootstrap {
         });
         ext.registerOverride("meta_app", "exportPackage", "kernel", (rs, args) ->
                 govService.exportAppPackage(str(args.get("appName"))));
+        ext.registerOverride("meta_app", "deleteApp", "kernel", (rs, args) ->
+                govService.deleteApp(str(args.get("appName"))));
 
         // 模型与版本治理服务
         ext.registerOverride("meta_model", "listModels", "kernel", (rs, args) -> govService.listModelsSummary());
@@ -349,6 +351,8 @@ public class PlatformKernelBootstrap {
                 govService.exportModelData(str(args.get("modelName"))));
         ext.registerOverride("meta_model", "listPublishRecords", "kernel", (rs, args) ->
                 govService.listPublishRecords(str(args.get("modelName"))));
+        ext.registerOverride("meta_model", "deleteModel", "kernel", (rs, args) ->
+                govService.deleteModel(str(args.get("modelName"))));
     }
 
     private String str(Object o) {

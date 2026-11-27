@@ -17,4 +17,6 @@ public interface GovernanceRepository {
 
     void savePurgeAudit(PurgeAudit audit);
     List<PurgeAudit> findAllPurgeAudits();
+
+    void deleteGovernanceByModel(String modelName);
 }

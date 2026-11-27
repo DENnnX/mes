@@ -142,6 +142,11 @@ public class SqliteIamRepository implements IamRepository {
     }
 
     @Override
+    public void deleteTenant(String tenantId) {
+        jdbcTemplate.update("DELETE FROM rbac_tenant WHERE id = ?", tenantId);
+    }
+
+    @Override
     public List<OrgNode> findOrgsByTenant(String tenantId) {
         List<Map<String, Object>> rows = (tenantId == null || tenantId.isBlank())
                 ? jdbcTemplate.queryForList("SELECT * FROM rbac_org ORDER BY sequence ASC, id ASC")
@@ -163,6 +168,11 @@ public class SqliteIamRepository implements IamRepository {
     @Override
     public void deleteOrg(String orgId) {
         jdbcTemplate.update("DELETE FROM rbac_org WHERE id = ?", orgId);
+    }
+
+    @Override
+    public void deleteOrgsByTenant(String tenantId) {
+        jdbcTemplate.update("DELETE FROM rbac_org WHERE tenant_id = ?", tenantId);
     }
 
     @Override

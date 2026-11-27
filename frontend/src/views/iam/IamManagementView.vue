@@ -58,11 +58,19 @@
               <el-tag v-else v-for="mn in row.authorizedMenus" :key="mn" size="small" type="warning" effect="light" style="margin:2px 4px 2px 0;">{{ appStore.resolveMenuDisplayName(mn) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="295" fixed="right">
+          <el-table-column label="操作" width="340" fixed="right">
             <template #default="{ row }">
               <el-button size="small" type="primary" plain :disabled="!authStore.canManageTenants || (!authStore.isSystemAdmin && row.id === authStore.currentUser?.tenantId)" @click="openAuthAppsDialog(row)">应用与菜单授权</el-button>
               <el-button link type="success" size="small" :disabled="!authStore.canManageTenants" @click="openQuickUserForTenant(row)">分配账号</el-button>
               <el-button link type="primary" size="small" :disabled="!authStore.canManageTenants" @click="openTenantDialog(row)">编辑</el-button>
+              <el-button
+                v-if="row.id !== 'rbac_tenant_root' && row.id !== authStore.currentUser?.tenantId"
+                link
+                type="danger"
+                size="small"
+                :disabled="!authStore.canManageTenants"
+                @click="handleDeleteTenant(row)"
+              >删除</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -448,6 +456,27 @@ async function saveTenant() {
     await loadAllIam();
   } catch (e) {
     ElMessage.error(e.message);
+  }
+}
+
+async function handleDeleteTenant(row) {
+  if (!row?.id || row.id === 'rbac_tenant_root') return;
+  try {
+    await ElMessageBox.confirm(
+      `确认删除租户「${row.name || row.code}」(${row.code}) 吗？将同步删除该租户下的部门组织、自定义角色与登录账号，且不可恢复！`,
+      '删除租户确认',
+      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger' }
+    );
+    const res = await rpcCall('rbac_tenant', 'deleteTenant', { tenantId: row.id });
+    if (iamFilterTenant.value === row.id) iamFilterTenant.value = '';
+    await loadAllIam();
+    ElMessage.success(
+      `已删除租户「${row.name || row.code}」（同步清理 ${res.deletedOrgs ?? 0} 个部门、${res.deletedUsers ?? 0} 个账号、${res.deletedRoles ?? 0} 个角色）`
+    );
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') {
+      ElMessage.error(e.message || '删除租户失败');
+    }
   }
 }
 

@@ -1373,6 +1373,176 @@ public class LowCodePlatformIntegrationTests {
         }
     }
 
+    @Test
+    @Order(12)
+    @SuppressWarnings("unchecked")
+    void testDeleteAppRemovesModelsViewsMenusAndData() {
+        requireError(rpcCall(userToken, "meta_app", "deleteApp", Map.of("appName", "mes_manufacturing")), -32001);
+        requireError(rpcCall(adminToken, "meta_app", "deleteApp", Map.of("appName", "platform_kernel")), -32003);
+
+        Map<String, Object> targetPkg = Map.of(
+                "app", Map.of("name", "del_target_app", "displayName", "待删测试应用"),
+                "models", List.of(
+                        Map.of("name", "del_group", "displayName", "待删分组", "appName", "del_target_app", "versionNo", "1.0.0",
+                                "properties", List.of(Map.of("name", "title", "displayName", "名称", "dataType", "String", "displayForModel", true, "required", true))),
+                        Map.of("name", "del_item", "displayName", "待删明细", "appName", "del_target_app", "versionNo", "1.0.0",
+                                "properties", List.of(
+                                        Map.of("name", "item_code", "displayName", "编号", "dataType", "String", "displayForModel", true, "required", true),
+                                        Map.of("name", "group_id", "displayName", "所属分组", "dataType", "ManyToOne", "relateModel", "del_group")))),
+                "menus", Map.of(
+                        "del_target_root_menu", Map.of("name", "del_target_root_menu", "display_name", "待删测试应用", "sequence", 90),
+                        "del_item_menu", Map.of("name", "del_item_menu", "display_name", "待删明细菜单", "model", "del_item",
+                                "view", "del_item_grid,del_item_search,del_item_form", "parent_ids", Map.of("@ref", "del_target_root_menu")))
+        );
+        requireResult(rpcCall(adminToken, "meta_app", "importPackage", Map.of("package", targetPkg, "autoPublish", true)));
+        requireResult(rpcCall(adminToken, "del_item", "create", Map.of("values", Map.of("item_code", "DEL-001"))));
+
+        Map<String, Object> extPkg = Map.of(
+                "app", Map.of("name", "del_ext_app", "displayName", "外部依赖应用"),
+                "models", List.of(Map.of("name", "del_ext_item", "displayName", "外部引用单", "appName", "del_ext_app", "versionNo", "1.0.0",
+                        "properties", List.of(
+                                Map.of("name", "title", "displayName", "标题", "dataType", "String", "displayForModel", true, "required", true),
+                                Map.of("name", "ref_item", "displayName", "关联待删", "dataType", "ManyToOne", "relateModel", "del_item"))))
+        );
+        requireResult(rpcCall(adminToken, "meta_app", "importPackage", Map.of("package", extPkg, "autoPublish", true)));
+
+        // 被其他应用引用时阻止删除
+        requireError(rpcCall(adminToken, "meta_app", "deleteApp", Map.of("appName", "del_target_app")), -32003);
+
+        // 先删除依赖应用，再删除目标应用（含租户授权清理）
+        requireResult(rpcCall(adminToken, "meta_app", "deleteApp", Map.of("appName", "del_ext_app")));
+        requireResult(rpcCall(adminToken, "rbac_tenant", "authorizeApps", Map.of(
+                "tenantId", "tenant_b",
+                "authorizedApps", List.of("foundation_qa_app", "del_target_app"),
+                "authorizedMenus", List.of("del_item_menu"))));
+
+        Map<String, Object> deleted = requireResult(rpcCall(adminToken, "meta_app", "deleteApp", Map.of("appName", "del_target_app")));
+        assertThat(deleted).containsEntry("appName", "del_target_app");
+        assertThat(((Number) deleted.get("deletedModelCount")).intValue()).isEqualTo(2);
+        assertThat(((Number) deleted.get("deletedViewCount")).intValue()).isGreaterThanOrEqualTo(6);
+        assertThat(((Number) deleted.get("deletedMenuCount")).intValue()).isGreaterThanOrEqualTo(2);
+
+        List<Map<String, Object>> apps = requireResult(rpcCall(adminToken, "meta_app", "list", null));
+        assertThat(apps).extracting(a -> a.get("name")).doesNotContain("del_target_app", "del_ext_app");
+
+        List<Map<String, Object>> models = requireResult(rpcCall(adminToken, "meta_model", "listModels", null));
+        assertThat(models).extracting(m -> m.get("name")).doesNotContain("del_group", "del_item", "del_ext_item");
+
+        List<Map<String, Object>> views = requireResult(rpcCall(adminToken, "meta_view", "listViews", Map.of("modelName", "")));
+        assertThat(views).extracting(v -> v.get("model")).doesNotContain("del_group", "del_item", "del_ext_item");
+
+        List<Map<String, Object>> rawMenus = requireResult(rpcCall(adminToken, "meta_menu", "listMenus", null));
+        assertThat(rawMenus).extracting(m -> m.get("name")).doesNotContain("del_target_root_menu", "del_item_menu");
+        assertThat(flattenMenuNames(requireResult(rpcCall(adminToken, "ui_menu", "loadMenu", null)))).doesNotContain("del_item_menu");
+
+        requireError(rpcCall(adminToken, "ui_view", "loadView", Map.of("model", "del_item")), -32601);
+        List<Map<String, Object>> tenants = requireResult(rpcCall(adminToken, "rbac_tenant", "listTenants", null));
+        Map<String, Object> tenantB = tenants.stream().filter(t -> "tenant_b".equals(t.get("id"))).findFirst().orElseThrow();
+        assertThat((List<String>) tenantB.get("authorizedApps")).containsExactly("foundation_qa_app");
+    }
+
+    @Test
+    @Order(13)
+    @SuppressWarnings("unchecked")
+    void testDeleteModelRemovesViewsMenusAndGuardsReferences() {
+        requireError(rpcCall(userToken, "meta_model", "deleteModel", Map.of("modelName", "mes_material")), -32001);
+        requireError(rpcCall(adminToken, "meta_model", "deleteModel", Map.of("modelName", "meta_model")), -32003);
+
+        Map<String, Object> pkg = Map.of(
+                "app", Map.of("name", "del_single_app", "displayName", "单表删除测试应用"),
+                "models", List.of(
+                        Map.of("name", "del_parent_tbl", "displayName", "待删父表", "appName", "del_single_app", "versionNo", "1.0.0",
+                                "properties", List.of(Map.of("name", "name", "displayName", "名称", "dataType", "String", "displayForModel", true, "required", true))),
+                        Map.of("name", "del_child_tbl", "displayName", "待删子表", "appName", "del_single_app", "versionNo", "1.0.0",
+                                "properties", List.of(
+                                        Map.of("name", "code", "displayName", "编码", "dataType", "String", "displayForModel", true, "required", true),
+                                        Map.of("name", "parent_id", "displayName", "父表", "dataType", "ManyToOne", "relateModel", "del_parent_tbl")))),
+                "menus", Map.of(
+                        "del_single_root_menu", Map.of("name", "del_single_root_menu", "display_name", "单表测试", "sequence", 95),
+                        "del_child_tbl_menu", Map.of("name", "del_child_tbl_menu", "display_name", "待删子表菜单", "model", "del_child_tbl",
+                                "view", "del_child_tbl_grid,del_child_tbl_search,del_child_tbl_form", "parent_ids", Map.of("@ref", "del_single_root_menu")))
+        );
+        requireResult(rpcCall(adminToken, "meta_app", "importPackage", Map.of("package", pkg, "autoPublish", true)));
+        requireResult(rpcCall(adminToken, "del_child_tbl", "create", Map.of("values", Map.of("code", "C-01"))));
+
+        // 被子表关联的父表不允许直接单独删除
+        requireError(rpcCall(adminToken, "meta_model", "deleteModel", Map.of("modelName", "del_parent_tbl")), -32003);
+
+        // 先删除子表：同步删除其视图与菜单，物理表失效，父应用仍在
+        Map<String, Object> delChild = requireResult(rpcCall(adminToken, "meta_model", "deleteModel", Map.of("modelName", "del_child_tbl")));
+        assertThat(delChild).containsEntry("modelName", "del_child_tbl");
+        assertThat(((Number) delChild.get("deletedViewCount")).intValue()).isGreaterThanOrEqualTo(3);
+        assertThat(((Number) delChild.get("deletedMenuCount")).intValue()).isGreaterThanOrEqualTo(1);
+        requireError(rpcCall(adminToken, "ui_view", "loadView", Map.of("model", "del_child_tbl")), -32601);
+        assertThat(flattenMenuNames(requireResult(rpcCall(adminToken, "ui_menu", "loadMenu", null)))).doesNotContain("del_child_tbl_menu");
+
+        // 解除依赖后再删除父表并清理测试应用
+        requireResult(rpcCall(adminToken, "meta_model", "deleteModel", Map.of("modelName", "del_parent_tbl")));
+        List<Map<String, Object>> remainingModels = requireResult(rpcCall(adminToken, "meta_model", "listModels", null));
+        assertThat(remainingModels).extracting(m -> m.get("name")).doesNotContain("del_child_tbl", "del_parent_tbl");
+        requireResult(rpcCall(adminToken, "meta_app", "deleteApp", Map.of("appName", "del_single_app")));
+    }
+
+    @Test
+    @Order(14)
+    @SuppressWarnings("unchecked")
+    void testDeleteViewMenuAndTenantWithGuards() {
+        requireError(rpcCall(userToken, "meta_view", "deleteView", Map.of("key", "mes_material_grid")), -32001);
+        requireError(rpcCall(userToken, "meta_menu", "deleteMenu", Map.of("name", "mes_material_menu")), -32001);
+
+        Map<String, Object> pkg = Map.of(
+                "app", Map.of("name", "del_vm_app", "displayName", "视图菜单删除测试"),
+                "models", List.of(Map.of("name", "del_vm_tbl", "displayName", "视图测试表", "appName", "del_vm_app", "versionNo", "1.0.0",
+                        "properties", List.of(Map.of("name", "title", "displayName", "标题", "dataType", "String", "displayForModel", true, "required", true)))),
+                "menus", Map.of(
+                        "del_vm_root_menu", Map.of("name", "del_vm_root_menu", "display_name", "视图菜单根", "sequence", 98),
+                        "del_vm_leaf_menu", Map.of("name", "del_vm_leaf_menu", "display_name", "视图菜单子项", "model", "del_vm_tbl",
+                                "view", "del_vm_tbl_grid,del_vm_tbl_search,del_vm_tbl_form", "parent_ids", Map.of("@ref", "del_vm_root_menu")))
+        );
+        requireResult(rpcCall(adminToken, "meta_app", "importPackage", Map.of("package", pkg, "autoPublish", true)));
+
+        // 删除单个视图布局
+        requireResult(rpcCall(adminToken, "meta_view", "deleteView", Map.of("key", "del_vm_tbl_search")));
+        List<Map<String, Object>> vmViews = requireResult(rpcCall(adminToken, "meta_view", "listViews", Map.of("modelName", "del_vm_tbl")));
+        assertThat(vmViews).extracting(v -> v.get("key")).doesNotContain("del_vm_tbl_search");
+
+        // 菜单删除守卫：含子菜单时阻止删除，先删子菜单再删父菜单
+        requireError(rpcCall(adminToken, "meta_menu", "deleteMenu", Map.of("name", "del_vm_root_menu")), -32003);
+        requireResult(rpcCall(adminToken, "meta_menu", "deleteMenu", Map.of("name", "del_vm_leaf_menu")));
+        requireResult(rpcCall(adminToken, "meta_menu", "deleteMenu", Map.of("name", "del_vm_root_menu")));
+        List<Map<String, Object>> menus = requireResult(rpcCall(adminToken, "meta_menu", "listMenus", null));
+        assertThat(menus).extracting(m -> m.get("name")).doesNotContain("del_vm_leaf_menu", "del_vm_root_menu");
+        requireResult(rpcCall(adminToken, "meta_app", "deleteApp", Map.of("appName", "del_vm_app")));
+
+        // 租户删除守卫：禁止删根租户、自身租户、含下级分站租户及越权跨租户删除
+        requireError(rpcCall(adminToken, "rbac_tenant", "deleteTenant", Map.of("tenantId", "rbac_tenant_root")), -32003);
+        Map<String, Object> hqLogin = requireResult(rpcCall(null, "rbac_user", "login", Map.of("username", "hq_mgr", "password", "123456")));
+        String hqTok = (String) hqLogin.get("token");
+        requireError(rpcCall(hqTok, "rbac_tenant", "deleteTenant", Map.of("tenantId", "hq_corp")), -32003);
+
+        requireResult(rpcCall(adminToken, "rbac_tenant", "saveTenant", Map.of("values", Map.of(
+                "id", "del_t_parent", "code", "del_t_parent", "name", "待删测试总部", "parentTenantId", "rbac_tenant_root"))));
+        requireResult(rpcCall(adminToken, "rbac_tenant", "saveTenant", Map.of("values", Map.of(
+                "id", "del_t_child", "code", "del_t_child", "name", "待删测试分站", "parentTenantId", "del_t_parent"))));
+        requireResult(rpcCall(adminToken, "rbac_role", "saveRole", Map.of("values", Map.of(
+                "tenantId", "del_t_child", "code", "ROLE_DEL_T_CHILD", "name", "分站测试角色", "allowedServices", List.of("ui_*:*")))));
+        requireResult(rpcCall(adminToken, "rbac_user", "saveUser", Map.of("values", Map.of(
+                "username", "del_t_user", "displayName", "分站测试账号", "tenantId", "del_t_child", "password", "123456",
+                "roleCodes", List.of("ROLE_DEL_T_CHILD")))));
+
+        requireError(rpcCall(hqTok, "rbac_tenant", "deleteTenant", Map.of("tenantId", "del_t_child")), -32001);
+        requireError(rpcCall(adminToken, "rbac_tenant", "deleteTenant", Map.of("tenantId", "del_t_parent")), -32003);
+
+        Map<String, Object> delChildTenant = requireResult(rpcCall(adminToken, "rbac_tenant", "deleteTenant", Map.of("tenantId", "del_t_child")));
+        assertThat(((Number) delChildTenant.get("deletedUsers")).intValue()).isEqualTo(1);
+        assertThat(((Number) delChildTenant.get("deletedRoles")).intValue()).isEqualTo(1);
+        assertThat(((Number) delChildTenant.get("deletedOrgs")).intValue()).isGreaterThanOrEqualTo(1);
+
+        requireResult(rpcCall(adminToken, "rbac_tenant", "deleteTenant", Map.of("tenantId", "del_t_parent")));
+        List<Map<String, Object>> remainingTenants = requireResult(rpcCall(adminToken, "rbac_tenant", "listTenants", null));
+        assertThat(remainingTenants).extracting(t -> t.get("id")).doesNotContain("del_t_child", "del_t_parent");
+    }
+
     private Object gridHeader(Map<String, Object> viewResponse) {
         Map<?, ?> grid = (Map<?, ?>) ((Map<?, ?>) viewResponse.get("views")).get("grid");
         List<?> columns = (List<?>) ((Map<?, ?>) grid.get("body")).get("columns");

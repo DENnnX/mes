@@ -6,6 +6,7 @@ import com.edu.scnu.domain.metamodel.repository.AppRepository;
 import com.edu.scnu.domain.shared.DomainException;
 import com.edu.scnu.domain.shared.MetaContext;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -616,6 +617,81 @@ public class IamAppService {
             iamRepository.saveOrg(root);
         }
         return t;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> deleteTenant(String tenantId) {
+        if (tenantId == null || tenantId.isBlank()) {
+            throw DomainException.invalidParams("租户标识 (tenantId) 不能为空");
+        }
+        TenantDef target = findTenantById(tenantId.trim())
+                .orElseThrow(() -> DomainException.invalidParams("租户不存在: " + tenantId));
+        if (MetaContext.DEFAULT_TENANT.equals(target.getId())) {
+            throw DomainException.stateGuardFailed("默认平台根租户 (rbac_tenant_root) 禁止删除");
+        }
+        UserAccount actor = currentActor();
+        if (Objects.equals(target.getId(), actor.getTenantId())) {
+            throw DomainException.stateGuardFailed("不能删除当前登录账号所属的租户");
+        }
+        if (!isRootSystemAdmin(actor)) {
+            Set<String> managed = resolveManagedTenantIds(actor);
+            if (managed == null || !managed.contains(target.getId())) {
+                throw DomainException.permissionDenied("越权拒绝：仅可删除本总部下属分站租户");
+            }
+        }
+        for (TenantDef other : iamRepository.findAllTenants()) {
+            if (!Objects.equals(other.getId(), target.getId())
+                    && Objects.equals(target.getId(), other.getParentTenantId())) {
+                throw DomainException.stateGuardFailed(
+                        "租户 [" + target.getName() + "] 下仍存在下级分站 [" + other.getName() + "]，请先删除下级分站");
+            }
+        }
+
+        List<UserAccount> users = iamRepository.findUsersByTenant(target.getId());
+        int deletedUsers = 0;
+        for (UserAccount u : users) {
+            if ("usr_admin".equals(u.getId())) continue;
+            iamRepository.deleteUser(u.getId());
+            deletedUsers++;
+        }
+        int deletedRoles = 0;
+        for (RoleDef role : iamRepository.findAllRoles()) {
+            if (Objects.equals(target.getId(), role.getTenantId()) && !BUILTIN_ROLE_CODES.contains(role.getCode())) {
+                iamRepository.deleteRole(role.getCode());
+                deletedRoles++;
+            }
+        }
+        int deletedOrgs = iamRepository.findOrgsByTenant(target.getId()).size();
+        iamRepository.deleteOrgsByTenant(target.getId());
+        iamRepository.deleteTenant(target.getId());
+        return Map.of(
+                "deleted", true,
+                "tenantId", target.getId(),
+                "tenantName", target.getName(),
+                "deletedUsers", deletedUsers,
+                "deletedRoles", deletedRoles,
+                "deletedOrgs", deletedOrgs
+        );
+    }
+
+    public void cleanupDeletedMenuReferences(Set<String> deletedMenuKeys) {
+        if (deletedMenuKeys == null || deletedMenuKeys.isEmpty()) return;
+        for (TenantDef tenant : iamRepository.findAllTenants()) {
+            List<String> menus = new ArrayList<>(tenant.getAuthorizedMenus());
+            if (!menus.isEmpty() && !menus.contains("*") && !menus.contains("__NONE__")
+                    && menus.removeIf(deletedMenuKeys::contains)) {
+                tenant.setAuthorizedMenus(menus.isEmpty() ? List.of("__NONE__") : menus);
+                iamRepository.saveTenant(tenant);
+            }
+        }
+        for (RoleDef role : iamRepository.findAllRoles()) {
+            List<String> menus = new ArrayList<>(role.getAllowedMenus());
+            if (!menus.isEmpty() && !menus.contains("*") && !menus.contains("__NONE__")
+                    && menus.removeIf(deletedMenuKeys::contains)) {
+                role.setAllowedMenus(menus.isEmpty() ? List.of("__NONE__") : menus);
+                iamRepository.saveRole(role);
+            }
+        }
     }
 
     private void validateDelegatedApps(String parentTenantId, List<String> delegatedApps) {

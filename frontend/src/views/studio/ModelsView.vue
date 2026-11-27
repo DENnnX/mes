@@ -32,7 +32,7 @@
           <el-tag size="small" :type="lifecycleTagType(row.lifecycleState)">{{ friendlyLifecycleLabel(row.lifecycleState) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="340" fixed="right">
+      <el-table-column label="操作" width="385" fixed="right">
         <template #default="{ row }">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap;">
             <el-button link type="primary" size="small" style="margin-left:0;" @click="openModelDesigner(row.name)">设计字段</el-button>
@@ -42,6 +42,7 @@
             <el-button v-if="row.lifecycleState === 'ONLINE_ACTIVE'" link type="danger" size="small" style="margin-left:0;" :disabled="row.kernelModel || row.abstractModel || !!row.extendModel" @click="handleOfflineModel(row)">停用</el-button>
             <el-button v-else-if="row.lifecycleState === 'OFFLINE'" link type="success" size="small" style="margin-left:0;" :disabled="row.kernelModel" @click="handleOnlineModel(row)">恢复使用</el-button>
             <el-button link type="info" size="small" style="margin-left:0;" :disabled="row.abstractModel || !!row.extendModel || !row.activeVersionId" @click="handleBackupModel(row)">备份</el-button>
+            <el-button v-if="!row.kernelModel && authStore.isSystemAdmin" link type="danger" size="small" style="margin-left:0;" @click="handleDeleteModel(row)">删除</el-button>
           </div>
         </template>
       </el-table-column>
@@ -54,10 +55,12 @@ import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { rpcCall } from '@/api/rpc';
+import { useAuthStore } from '@/stores/auth';
 import { useAppStore } from '@/stores/app';
 import { lifecycleTagType, friendlyLifecycleLabel } from '@/utils/formatters';
 
 const router = useRouter();
+const authStore = useAuthStore();
 const appStore = useAppStore();
 const showKernelModels = ref(false);
 
@@ -148,6 +151,30 @@ async function handleBackupModel(row) {
 
 function jumpToRuntimeModel(modelName) {
   router.push('/m/' + encodeURIComponent(modelName));
+}
+
+async function handleDeleteModel(row) {
+  if (!row?.name || row.kernelModel) return;
+  try {
+    await ElMessageBox.confirm(
+      `确认删除表单/数据表「${row.displayName || row.name}」(${row.name}) 吗？将同步删除其所有版本、关联视图（表格/搜索/表单）、导航菜单及对应业务数据表，且不可恢复！`,
+      '删除表单与数据表确认',
+      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger' }
+    );
+    const res = await rpcCall('meta_model', 'deleteModel', { modelName: row.name });
+    await appStore.refreshMenusAndOverview();
+    const encodedModelPath = '/m/' + encodeURIComponent(row.name);
+    appStore.openTabs = appStore.openTabs.filter(
+      (t) => t.mode !== 'runtime' || (t.key !== encodedModelPath && !!appStore.findMenuNode('', t.key))
+    );
+    ElMessage.success(
+      `已删除表单「${row.displayName || row.name}」，同步清理 ${res.deletedViewCount ?? 0} 个视图与 ${res.deletedMenuCount ?? 0} 个菜单`
+    );
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') {
+      ElMessage.error(e.message || '删除表单失败');
+    }
+  }
 }
 
 onMounted(() => {

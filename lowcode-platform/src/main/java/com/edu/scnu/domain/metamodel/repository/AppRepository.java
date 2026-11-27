@@ -8,4 +8,5 @@ public interface AppRepository {
     void save(AppAggregate app);
     Optional<AppAggregate> findByName(String name);
     List<AppAggregate> findAll();
+    void deleteByName(String name);
 }
