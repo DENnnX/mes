@@ -12,3 +12,5 @@ services:
     restart: unless-stopped
     environment:
       - TZ=Asia/Shanghai
+      - DEEPSEEK_API_KEY
+      - DEEPSEEK_MODEL

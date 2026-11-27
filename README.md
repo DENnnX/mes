@@ -135,6 +135,18 @@ java -jar target/lowcode-platform-2.0.0.jar
 java -Dserver.port=8089 -DDB_PATH=./my-data/lowcode.db -jar target/lowcode-platform-2.0.0.jar
 ```
 
+### 启用 MES 助手
+
+在启动后端的终端设置 `DEEPSEEK_API_KEY`。例如，在 PowerShell 7 中可以隐藏输入：
+
+```powershell
+$env:DEEPSEEK_API_KEY = Read-Host '输入 DeepSeek API Key' -MaskInput
+```
+
+在同一终端启动 JAR、Maven 开发服务或 Docker Compose。默认使用 `deepseek-flash`，可用 `DEEPSEEK_MODEL` 覆盖。登录后从左侧栏底部打开「MES 助手」。它可讲解页面用途、操作步骤和常见问题，并提供当前账号已授权的跳转入口。
+
+只有用户输入的问题和对应的帮助主题会发送给 DeepSeek。回答来自项目内置的帮助说明，业务记录与登录信息保留在平台中。
+
 ---
 
 ## 访问验证与首次使用指南
