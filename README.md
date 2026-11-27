@@ -1,6 +1,6 @@
 # 可视化模型驱动低代码开发平台（Low-Code Platform v2.1.0）
 
-基于 **Java 17 + Spring Boot 2.7 + SQLite + Groovy + Vue 3 / Element Plus** 构建的**可视化模型驱动低代码开发平台**。后端严格遵循 **DDD（领域驱动设计）** 四层架构，前端具备独立统一登录页、通俗易懂的可视化管理后台与纯元视图动态渲染能力。
+基于 **Java 17 + Spring Boot 4.1.3 + SQLite + Groovy + Vue 3 / Element Plus** 构建的**可视化模型驱动低代码开发平台**。后端严格遵循 **DDD（领域驱动设计）** 四层架构，前端具备独立统一登录页、通俗易懂的可视化管理后台与纯元视图动态渲染能力。
 
 本仓库为**纯通用低代码底座实现**，首次启动仅初始化平台基础底座、默认根租户与内置权限角色，**不包含任何硬编码业务示例**。系统管理员可通过 JSON 应用包或在线设计台定义数据表、字段校验、编号规则与状态流转动作，平台自动完成建表改表、动态接口生成与页面渲染，并支持按**多租户**隔离数据与**应用授权登录控制**。
 
@@ -22,7 +22,7 @@
     ├── Dockerfile                    # Docker 镜像构建文件
     ├── docker-compose.yml            # Docker Compose 编排配置（默认端口 8088）
     └── src/
-        ├── main/java/com/sie/lowcode/
+        ├── main/java/com/edu/scnu/
         │   ├── interfaces/           # 统一 JSON-RPC 2.0 网关、4环责任链与文件上传下载接口
         │   ├── application/          # 应用编排（模型治理、UI渲染、字典编码、多租户IAM、API文档）
         │   ├── domain/               # 领域模型、继承与影响分析、RecordSet、Filter DSL、验证钩子

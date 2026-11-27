@@ -66,7 +66,7 @@
               <el-button size="small" type="success" plain @click="addService('STATE_TRANSITION')">+ 新增状态流转按钮</el-button>
               <el-button size="small" type="primary" plain @click="addService('GROOVY_SCRIPT')">+ 新增自定义脚本动作</el-button>
             </div>
-            <div v-for="(svc, idx) in snapshot.services" :key="idx" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:8px;">
+            <div v-for="(svc, idx) in snapshot.services" :key="idx" style="border:1px solid var(--border-light);border-radius:8px;padding:10px;margin-bottom:8px;">
               <el-row :gutter="8">
                 <el-col :span="6"><el-input v-model="svc.name" size="small" placeholder="动作标识" /></el-col>
                 <el-col :span="6"><el-input v-model="svc.displayName" size="small" placeholder="按钮名字" /></el-col>
@@ -148,7 +148,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <div v-if="versionCenterState.impact" style="margin-top:12px;border:1px solid #e2e8f0;border-radius:8px;padding:12px;">
+      <div v-if="versionCenterState.impact" style="margin-top:12px;border:1px solid var(--border-light);border-radius:8px;padding:12px;">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
           <strong>变更影响检查结果：</strong>
           <el-tag :type="versionCenterState.impact.passed ? 'success' : 'danger'">

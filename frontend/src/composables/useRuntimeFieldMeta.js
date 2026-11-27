@@ -6,6 +6,11 @@ export function useRuntimeFieldMeta(viewDataRefOrGetter) {
 
   const formColumns = computed(() => getViewData()?.views?.form?.body?.columns || []);
   const formTabs = computed(() => getViewData()?.views?.form?.body?.tabs || []);
+  const fieldEntries = computed(() => Object.values(getViewData()?.fields || {}));
+  const identityField = computed(() => fieldEntries.value.find((field) => field.displayForModel));
+  const workflowField = computed(() => fieldEntries.value.find((field) =>
+    isFieldSelectionOrDict(field.name) && getFieldOptions(field.name).some((option) => option.value === 'RUNNING')
+  ));
 
   const runtimeFormGroups = computed(() => {
     const columns = new Map(formColumns.value.map((col) => [col.name, col]));
@@ -110,6 +115,8 @@ export function useRuntimeFieldMeta(viewDataRefOrGetter) {
   return {
     formColumns,
     formTabs,
+    identityField,
+    workflowField,
     runtimeFormGroups,
     runtimeEditableGroups,
     runtimeEditableTabs,

@@ -3,7 +3,7 @@
     <div class="lc-card">
       <div class="lc-card-header">
         <h2 class="lc-card-title">数据表停用与受控安全清理</h2>
-        <span style="font-size:12px;color:#64748b;">流程：暂停使用 → 1. 导出备份凭据 → 2. 申请彻底清理 → 系统管理员确认销毁</span>
+        <span style="font-size:12px;color:var(--text-muted);">流程：暂停使用 → 1. 导出备份凭据 → 2. 申请彻底清理 → 系统管理员确认销毁</span>
       </div>
       <el-table :data="appStore.businessModels" border size="small">
         <el-table-column prop="displayName" label="中文名称" width="155" />
@@ -42,7 +42,7 @@
               <el-button size="small" type="danger" @click="handleConfirmPurge(row.id)">批准并销毁</el-button>
               <el-button size="small" @click="handleRejectPurge(row.id)">退回</el-button>
             </template>
-            <span v-else style="color:#64748b;font-size:12px;">{{ row.confirmBy ? '审核人: ' + row.confirmBy : '-' }}</span>
+            <span v-else style="color:var(--text-muted);font-size:12px;">{{ row.confirmBy ? '审核人: ' + row.confirmBy : '-' }}</span>
           </template>
         </el-table-column>
       </el-table>
