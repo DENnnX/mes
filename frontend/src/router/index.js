@@ -11,9 +11,6 @@ import ModelsView from '@/views/studio/ModelsView.vue';
 import ViewsMenusView from '@/views/studio/ViewsMenusView.vue';
 import DictView from '@/views/studio/DictView.vue';
 import CodeRuleView from '@/views/studio/CodeRuleView.vue';
-import GovernanceView from '@/views/studio/GovernanceView.vue';
-import ApiDocView from '@/views/studio/ApiDocView.vue';
-import RpcConsoleView from '@/views/studio/RpcConsoleView.vue';
 import IamManagementView from '@/views/iam/IamManagementView.vue';
 import RuntimePortalView from '@/views/runtime/RuntimePortalView.vue';
 import DynamicModelView from '@/views/runtime/DynamicModelView.vue';
@@ -38,9 +35,6 @@ const routes = [
       { path: 'studio/iam', name: 'studio-iam', component: IamManagementView, meta: { mode: 'studio', tab: 'iam', requiresStudio: true } },
       { path: 'studio/dict', name: 'studio-dict', component: DictView, meta: { mode: 'studio', tab: 'dict', requiresStudio: true } },
       { path: 'studio/code_rule', name: 'studio-code_rule', component: CodeRuleView, meta: { mode: 'studio', tab: 'code_rule', requiresStudio: true } },
-      { path: 'studio/governance', name: 'studio-governance', component: GovernanceView, meta: { mode: 'studio', tab: 'governance', requiresStudio: true } },
-      { path: 'studio/api_doc', name: 'studio-api_doc', component: ApiDocView, meta: { mode: 'studio', tab: 'api_doc', requiresStudio: true } },
-      { path: 'studio/rpc_console', name: 'studio-rpc_console', component: RpcConsoleView, meta: { mode: 'studio', tab: 'rpc_console', requiresStudio: true } },
       { path: 'tenant-admin', name: 'tenant-admin', component: IamManagementView, meta: { mode: 'tenant_admin', tab: 'iam', requiresTenantAdmin: true } },
       { path: 'runtime', name: 'runtime-home', component: RuntimePortalView, meta: { mode: 'runtime' } },
       { path: 'menu/:menuName', name: 'runtime-menu', component: DynamicModelView, meta: { mode: 'runtime' } },

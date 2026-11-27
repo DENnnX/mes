@@ -445,7 +445,7 @@ public class LowCodePlatformIntegrationTests {
     @Test
     @Order(5)
     @SuppressWarnings("unchecked")
-    void testOfflineAndControlledPurgeGovernance() {
+    void testOfflineExportAndRestoreGovernance() {
         // 1. 下线 test_task 模型 -> 动态菜单自动隐藏 + 普通运行时 RPC 被阻断 (-32003)
         requireResult(rpcCall(adminToken, "meta_model", "offline", Map.of("modelName", "test_task")));
         requireError(rpcCall(userToken, "test_task", "search", Map.of("filter", Collections.emptyList())), -32003);
@@ -454,57 +454,25 @@ public class LowCodePlatformIntegrationTests {
         List<Map<String, Object>> children = (List<Map<String, Object>>) menusWhileOffline.get(0).get("children");
         assertThat(children).extracting(m -> m.get("model")).doesNotContain("test_task");
 
-        // 2. 无导出凭据直接申请清除 -> 守卫阻断 (-32003)
-        requireError(rpcCall(adminToken, "meta_model", "applyPurge",
-                Map.of("modelName", "test_task", "exportTicket", "FAKE_TICKET")), -32003);
-
-        // 3. 先清除依赖子表 test_task_item：由统一 admin 直接申请并确认清理
-        requireResult(rpcCall(adminToken, "meta_model", "offline", Map.of("modelName", "test_task_item")));
-        Map<String, Object> expItem = requireResult(rpcCall(adminToken, "meta_model", "exportData",
-                Map.of("modelName", "test_task_item")));
-        Map<String, Object> applyItem = requireResult(rpcCall(adminToken, "meta_model", "applyPurge",
-                Map.of("modelName", "test_task_item", "exportTicket", expItem.get("exportTicket"))));
-        String applyItemId = (String) applyItem.get("id");
-        requireResult(rpcCall(adminToken, "meta_model", "confirmPurge", Map.of("applyId", applyItemId)));
-
-        // 4. 导出 test_task 数据获取有效凭据
+        // 2. 普通用户无权恢复模型 (-32001)，管理员可在数据表管理中导出备份数据
+        requireError(rpcCall(userToken, "meta_model", "online", Map.of("modelName", "test_task")), -32001);
         Map<String, Object> exp = requireResult(rpcCall(adminToken, "meta_model", "exportData",
                 Map.of("modelName", "test_task")));
-        String exportTicket = (String) exp.get("exportTicket");
+        assertThat((String) exp.get("exportTicket")).isNotBlank();
         assertThat(((Number) exp.get("recordCount")).intValue()).isEqualTo(2);
+        assertThat((List<Map<String, Object>>) exp.get("records")).hasSize(2);
 
-        // 存在未清理业务数据时守卫阻断，必须先清理测试数据
+        // 3. 清理审批流程已删除，applyPurge / confirmPurge 不再暴露
         requireError(rpcCall(adminToken, "meta_model", "applyPurge",
-                Map.of("modelName", "test_task", "exportTicket", exportTicket)), -32003);
+                Map.of("modelName", "test_task", "exportTicket", exp.get("exportTicket"))), -32601);
 
-        // 临时上线删除业务记录后再下线，完成合规清理链路
+        // 4. 从停用状态恢复上线 -> 菜单重新出现，业务数据完好可读
         requireResult(rpcCall(adminToken, "meta_model", "online", Map.of("modelName", "test_task")));
-        Map<String, Object> allRows = requireResult(rpcCall(userToken, "test_task", "search", Map.of("filter", Collections.emptyList())));
-        List<String> allIds = ((List<Map<String, Object>>) allRows.get("records")).stream()
-                .map(r -> (String) r.get("id")).toList();
-        requireResult(rpcCall(adminToken, "test_task", "delete", Map.of("ids", allIds)));
-        requireResult(rpcCall(adminToken, "meta_model", "offline", Map.of("modelName", "test_task")));
-
-        // admin 发起清除申请
-        Map<String, Object> apply = requireResult(rpcCall(adminToken, "meta_model", "applyPurge",
-                Map.of("modelName", "test_task", "exportTicket", exportTicket)));
-        String applyId = (String) apply.get("id");
-
-        // 普通业务用户 user 无 ROLE_ADMIN 权限 -> -32001
-        requireError(rpcCall(userToken, "meta_model", "confirmPurge", Map.of("applyId", applyId)), -32001);
-
-        // 统一系统管理员 admin 直接确认完成清除
-        Map<String, Object> audit = requireResult(rpcCall(adminToken, "meta_model", "confirmPurge",
-                Map.of("applyId", applyId)));
-        assertThat(audit.get("modelName")).isEqualTo("test_task");
-        assertThat(audit.get("applyBy")).isEqualTo("usr_admin");
-        assertThat(audit.get("confirmBy")).isEqualTo("usr_admin");
-
-        // 清除后台账中不再存在 test_task，且审计记录保留
-        List<Map<String, Object>> remainingModels = requireResult(rpcCall(adminToken, "meta_model", "listModels", null));
-        assertThat(remainingModels).extracting(m -> m.get("name")).doesNotContain("test_task");
-        List<Map<String, Object>> audits = requireResult(rpcCall(adminToken, "meta_model", "listPurgeAudits", null));
-        assertThat(audits).extracting(a -> a.get("modelName")).contains("test_task", "test_task_item");
+        Map<String, Object> restoredRows = requireResult(rpcCall(userToken, "test_task", "search", Map.of("filter", Collections.emptyList())));
+        assertThat(((Number) restoredRows.get("total")).intValue()).isEqualTo(2);
+        List<Map<String, Object>> menusRestored = requireResult(rpcCall(userToken, "ui_menu", "loadMenu", null));
+        List<Map<String, Object>> childrenRestored = (List<Map<String, Object>>) menusRestored.get(0).get("children");
+        assertThat(childrenRestored).extracting(m -> m.get("model")).contains("test_task");
     }
 
     @Test
@@ -764,7 +732,7 @@ public class LowCodePlatformIntegrationTests {
                 "code", "ROLE_QA_READONLY",
                 "name", "工单只读角色",
                 "dataScope", "ALL",
-                "allowedServices", List.of("ui_*:*", "qa_ticket:search", "qa_ticket:find", "meta_dict:*", "api_doc:*")
+                "allowedServices", List.of("ui_*:*", "qa_ticket:search", "qa_ticket:find", "meta_dict:*")
         ))));
 
         Map<String, Object> bReadUser = requireResult(rpcCall(adminToken, "rbac_user", "saveUser", Map.of("values", Map.of(
@@ -817,12 +785,65 @@ public class LowCodePlatformIntegrationTests {
         assertThat((List<Map<String, Object>>) rootRows.get("records"))
                 .extracting(r -> r.get("title")).containsExactly("工单Alpha");
 
-        // 6. 自动 API 文档与权限目录验证
-        List<Map<String, Object>> catalog = requireResult(rpcCall(devToken, "api_doc", "listCatalog", null));
-        assertThat(catalog).isNotEmpty();
-        Map<String, Object> childSpec = requireResult(rpcCall(devToken, "api_doc", "describeModel", Map.of("modelName", "child_doc")));
-        assertThat((List<Map<String, Object>>) childSpec.get("properties"))
-                .extracting(p -> p.get("name")).contains("doc_no", "title", "ext_note", "dept_tags");
+        // 6. Swagger / OpenAPI 3+ 文档与 Apifox 分路径直调验证
+        Map<String, Object> openApiSpec = (Map<String, Object>) restClient.get().uri("/v3/api-docs")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(Map.class).returnResult().getResponseBody();
+        assertThat((String) openApiSpec.get("openapi")).startsWith("3.0.");
+        Map<String, Object> paths = (Map<String, Object>) openApiSpec.get("paths");
+        assertThat(paths).containsKeys(
+                "/rpc/open/service/rbac_user/login",
+                "/{tenant}/rpc/service/child_doc/search",
+                "/{tenant}/rpc/service/child_doc/create",
+                "/{tenant}/rpc/service/qa_ticket/search",
+                "/api/files/upload");
+        Map<String, Object> components = (Map<String, Object>) openApiSpec.get("components");
+        Map<String, Object> schemas = (Map<String, Object>) components.get("schemas");
+        assertThat(schemas).containsKeys("JsonRpcSuccessResponse", "JsonRpcErrorObject", "JsonRpcRequestEnvelope", "ChildDocRecord");
+        Map<String, Object> childSchema = (Map<String, Object>) schemas.get("ChildDocRecord");
+        Map<String, Object> childProps = (Map<String, Object>) childSchema.get("properties");
+        assertThat(childProps).containsKeys("doc_no", "title", "ext_note", "dept_tags");
+        assertThat((Map<String, Object>) components.get("securitySchemes")).containsKey("bearerAuth");
+
+        // Swagger UI 资源与 Config 正常提供服务
+        restClient.get().uri("/swagger-ui/index.html").exchange().expectStatus().isOk();
+        Map<String, Object> swaggerCfg = (Map<String, Object>) restClient.get().uri("/v3/api-docs/swagger-config")
+                .exchange().expectStatus().isOk()
+                .expectBody(Map.class).returnResult().getResponseBody();
+        assertThat((String) swaggerCfg.get("url")).contains("/v3/api-docs");
+
+        // Apifox 风格直连端点：匿名登录 + 简写 JSON 调用 + 标准 JSON-RPC 2.0 兼容
+        Map<String, Object> apifoxLogin = (Map<String, Object>) restClient.post()
+                .uri("/rpc/open/service/rbac_user/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("username", "b_reader", "password", "newpass99"))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(Map.class).returnResult().getResponseBody();
+        String apifoxToken = (String) ((Map<String, Object>) apifoxLogin.get("result")).get("token");
+        assertThat(apifoxToken).isNotBlank();
+
+        Map<String, Object> apifoxSearch = (Map<String, Object>) restClient.post()
+                .uri("/tenant_b/rpc/service/qa_ticket/search")
+                .contentType(MediaType.APPLICATION_JSON)
+                .headers(h -> h.setBearerAuth(apifoxToken))
+                .body(Map.of("args", Map.of("filter", Collections.emptyList())))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(Map.class).returnResult().getResponseBody();
+        assertThat(((Number) ((Map<String, Object>) apifoxSearch.get("result")).get("total")).longValue()).isEqualTo(2L);
+
+        Map<String, Object> apifoxCount = (Map<String, Object>) restClient.post()
+                .uri("/rpc/service/qa_ticket/count")
+                .contentType(MediaType.APPLICATION_JSON)
+                .headers(h -> h.setBearerAuth(userToken))
+                .body(Collections.emptyMap())
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(Map.class).returnResult().getResponseBody();
+        assertThat(((Number) apifoxCount.get("result")).longValue()).isEqualTo(1L);
+
         List<Map<String, Object>> permCatalog = requireResult(rpcCall(devToken, "rbac_role", "permissionCatalog", null));
         assertThat(permCatalog).extracting(g -> g.get("groupKey")).contains("kernel", "builtin_wildcard");
 

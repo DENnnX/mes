@@ -716,8 +716,7 @@ public class IamAppService {
                     || s.startsWith("meta_dict:save") || s.startsWith("meta_dict:delete")
                     || s.startsWith("meta_code_rule:save") || s.startsWith("meta_code_rule:delete")
                     || s.startsWith("rbac_tenant") || s.startsWith("rbac_role")
-                    || s.startsWith("rbac_user:save") || s.startsWith("rbac_user:delete") || s.startsWith("rbac_user:reset")
-                    || s.contains("Purge")) {
+                    || s.startsWith("rbac_user:save") || s.startsWith("rbac_user:delete") || s.startsWith("rbac_user:reset")) {
                 throw DomainException.permissionDenied("越权拒绝：租户角色无权配置平台系统或全模型通配权限 [" + s + "]");
             }
         }

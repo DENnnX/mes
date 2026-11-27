@@ -652,85 +652,6 @@ public class MetaGovernanceAppService {
         return Map.of("exportTicket", ticketId, "modelName", modelName, "recordCount", records.size(), "records", records);
     }
 
-    @Transactional(rollbackFor = Exception.class)
-    public PurgeApply applyPurge(String modelName, String exportTicket) {
-        ModelAggregate agg = modelRepo.findModelByName(modelName)
-                .orElseThrow(() -> DomainException.invalidParams("模型不存在: " + modelName));
-        verifyPurgeGuards(agg, exportTicket);
-
-        agg.setLifecycleState(ModelAggregate.LifecycleState.PURGE_PENDING);
-        modelRepo.saveModel(agg);
-
-        PurgeApply apply = new PurgeApply();
-        apply.setId("prg_" + UUID.randomUUID().toString().substring(0, 8));
-        apply.setModelName(modelName);
-        apply.setExportTicket(exportTicket);
-        apply.setApplyBy(currentUserId());
-        apply.setApplyTime(nowStr());
-        apply.setStatus(PurgeApply.Status.PENDING);
-        govRepo.savePurgeApply(apply);
-        return apply;
-    }
-
-    /**
-     * 系统管理员确认执行永久清除：校验申请单状态并二次复查安全守卫。
-     */
-    @Transactional(rollbackFor = Exception.class)
-    public PurgeAudit confirmPurge(String applyId) {
-        PurgeApply apply = govRepo.findPurgeApplyById(applyId)
-                .orElseThrow(() -> DomainException.invalidParams("清除申请单不存在: " + applyId));
-        ModelAggregate agg = modelRepo.findModelByName(apply.getModelName())
-                .orElseThrow(() -> DomainException.invalidParams("目标模型不存在: " + apply.getModelName()));
-
-        String adminId = currentUserId();
-        apply.confirmBy(adminId, nowStr());
-        verifyPurgeGuards(agg, apply.getExportTicket());
-
-        long count = agg.getActiveVersionId() != null
-                ? modelRepo.findVersionById(agg.getActiveVersionId())
-                    .map(v -> safeCountRecords(v.getSnapshot())).orElse(0L)
-                : 0L;
-
-        // 执行物理销毁与元模型清理
-        dataAccessor.dropTable(agg.getTableName());
-        uiRepo.deleteViewsByModel(agg.getName());
-        uiRepo.deleteMenusByModel(agg.getName());
-        modelRepo.deleteReferencesByModel(agg.getName());
-        modelRepo.deleteVersionsByModel(agg.getName());
-        modelRepo.deleteModelMeta(agg.getName());
-
-        apply.setStatus(PurgeApply.Status.EXECUTED);
-        govRepo.savePurgeApply(apply);
-
-        PurgeAudit audit = new PurgeAudit();
-        audit.setAuditId("aud_" + UUID.randomUUID().toString().substring(0, 10));
-        audit.setModelName(agg.getName());
-        audit.setTableName(agg.getTableName());
-        audit.setExportTicket(apply.getExportTicket());
-        audit.setApplyBy(apply.getApplyBy());
-        audit.setConfirmBy(adminId);
-        audit.setPurgedRecordCount(count);
-        audit.setPurgedAt(nowStr());
-        govRepo.savePurgeAudit(audit);
-
-        memoryRegistry.reloadAll();
-        return audit;
-    }
-
-    @Transactional(rollbackFor = Exception.class)
-    public PurgeApply rejectPurge(String applyId, String reason) {
-        PurgeApply apply = govRepo.findPurgeApplyById(applyId)
-                .orElseThrow(() -> DomainException.invalidParams("清除申请单不存在: " + applyId));
-        apply.rejectBy(currentUserId(), reason, nowStr());
-        govRepo.savePurgeApply(apply);
-
-        modelRepo.findModelByName(apply.getModelName()).ifPresent(agg -> {
-            agg.setLifecycleState(ModelAggregate.LifecycleState.OFFLINE);
-            modelRepo.saveModel(agg);
-        });
-        return apply;
-    }
-
     public Map<String, Object> getModelDetail(String modelName) {
         ModelAggregate agg = modelRepo.findModelByName(modelName)
                 .orElseThrow(() -> DomainException.invalidParams("模型不存在: " + modelName));
@@ -777,50 +698,8 @@ public class MetaGovernanceAppService {
     }
 
     public List<PublishRecord> listPublishRecords(String modelName) { return govRepo.findPublishRecords(modelName); }
-    public List<PurgeApply> listPurgeApplies() { return govRepo.findAllPurgeApplies(); }
-    public List<PurgeAudit> listPurgeAudits() { return govRepo.findAllPurgeAudits(); }
 
     // ==================== Private Guards & Helpers ====================
-
-    private void verifyPurgeGuards(ModelAggregate agg, String exportTicket) {
-        if (agg.isKernelModel()) {
-            throw DomainException.stateGuardFailed("平台内核模型禁止永久清除");
-        }
-        if (agg.getLifecycleState() != ModelAggregate.LifecycleState.OFFLINE
-                && agg.getLifecycleState() != ModelAggregate.LifecycleState.PURGE_PENDING) {
-            throw DomainException.stateGuardFailed("守卫阻断：仅已下线 (OFFLINE) 模型可发起清除，当前状态: " + agg.getLifecycleState());
-        }
-        if (agg.getRetentionDays() > 0 && agg.getOfflineTime() != null) {
-            LocalDateTime offAt = LocalDateTime.parse(agg.getOfflineTime(), TS_FMT);
-            long days = Duration.between(offAt, LocalDateTime.now()).toDays();
-            if (days < agg.getRetentionDays()) {
-                throw DomainException.stateGuardFailed("守卫阻断：未满最低保留期 (" + agg.getRetentionDays() + " 天)，当前已下线 " + days + " 天");
-            }
-        }
-        String ticketModel = govRepo.findValidExportTicketModel(exportTicket).orElse(null);
-        if (!Objects.equals(agg.getName(), ticketModel)) {
-            throw DomainException.stateGuardFailed("守卫阻断：缺少针对模型 [" + agg.getName() + "] 的有效数据导出凭据");
-        }
-        // 零外部强引用检查
-        for (ModelSnapshot other : memoryRegistry.getAllActiveSnapshots().values()) {
-            if (other.getName().equals(agg.getName())) continue;
-            for (PropertyDef p : other.getProperties()) {
-                if (p.isManyToOne() && agg.getName().equals(p.getRelateModel())) {
-                    throw DomainException.stateGuardFailed("守卫阻断：模型仍被外部模型 [" + other.getName() + "." + p.getName() + "] 引用");
-                }
-            }
-        }
-        // 检查是否存在未关闭业务记录（若有 status 属性且存在非终态，提示或由活跃记录检查）
-        if (agg.getActiveVersionId() != null) {
-            ModelSnapshot snap = modelRepo.findVersionById(agg.getActiveVersionId()).map(ModelVersion::getSnapshot).orElse(null);
-            if (snap != null && snap.getProperty("status") != null) {
-                long activeRows = safeCountRecords(snap);
-                if (activeRows > 0) {
-                    throw DomainException.stateGuardFailed("守卫阻断：当前模型尚存 " + activeRows + " 条业务数据记录未清理，请先删除/办结后再清除");
-                }
-            }
-        }
-    }
 
     private void applyModelMetadata(ModelAggregate model, ModelSnapshot snapshot) {
         model.setDisplayName(snapshot.getDisplayName() != null ? snapshot.getDisplayName() : snapshot.getName());

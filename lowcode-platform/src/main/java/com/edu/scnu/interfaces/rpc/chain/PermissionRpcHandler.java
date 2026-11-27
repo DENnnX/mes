@@ -20,12 +20,11 @@ public class PermissionRpcHandler implements RpcHandler {
     private static final Set<String> AUTH_SELF_METHODS = Set.of(
             "rbac_user.profile", "rbac_user.changePassword", "rbac_user.logout",
             "auth.profile", "auth.changePassword", "auth.logout");
-    private static final Set<String> ADMIN_ONLY = Set.of(
-            "confirmPurge", "rejectPurge");
+    private static final Set<String> ADMIN_ONLY = Set.of("saveModel", "deleteModel");
     private static final Set<String> TENANT_ADMIN_OR_ROOT = Set.of(
             "saveUser", "deleteUser", "resetPassword", "saveTenant", "authorizeApps", "authorizeMenus",
             "saveOrg", "deleteOrg", "saveRole", "deleteRole");
-    private static final Set<String> PUBLISHER_REQ = Set.of("publish", "rollback", "offline", "online", "applyPurge");
+    private static final Set<String> PUBLISHER_REQ = Set.of("publish", "rollback", "offline", "online");
     private static final Set<String> DEV_REQ = Set.of(
             "saveDraft", "checkImpact", "buildDefaultViews", "importPackage", "saveView", "saveMenu",
             "saveType", "deleteType", "saveItem", "deleteItem", "saveRule", "deleteRule");

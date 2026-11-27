@@ -32,12 +32,17 @@
           <el-tag size="small" :type="lifecycleTagType(row.lifecycleState)">{{ friendlyLifecycleLabel(row.lifecycleState) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="275" fixed="right">
+      <el-table-column label="操作" width="340" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="openModelDesigner(row.name)">设计字段</el-button>
-          <el-button link type="success" size="small" :disabled="row.kernelModel || row.abstractModel || !!row.extendModel" @click="handleBuildDefaultViews(row.name)">生成页面</el-button>
-          <el-button link type="warning" size="small" @click="openVersionCenter(row.name)">版本/检查</el-button>
-          <el-button link type="primary" size="small" :disabled="row.kernelModel || row.abstractModel || !!row.extendModel || row.lifecycleState !== 'ONLINE_ACTIVE' || !row.activeVersionId" @click="jumpToRuntimeModel(row.name)">打开使用</el-button>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap;">
+            <el-button link type="primary" size="small" style="margin-left:0;" @click="openModelDesigner(row.name)">设计字段</el-button>
+            <el-button link type="success" size="small" style="margin-left:0;" :disabled="row.kernelModel || row.abstractModel || !!row.extendModel" @click="handleBuildDefaultViews(row.name)">生成页面</el-button>
+            <el-button link type="warning" size="small" style="margin-left:0;" @click="openVersionCenter(row.name)">版本/检查</el-button>
+            <el-button link type="primary" size="small" style="margin-left:0;" :disabled="row.kernelModel || row.abstractModel || !!row.extendModel || row.lifecycleState !== 'ONLINE_ACTIVE' || !row.activeVersionId" @click="jumpToRuntimeModel(row.name)">打开使用</el-button>
+            <el-button v-if="row.lifecycleState === 'ONLINE_ACTIVE'" link type="danger" size="small" style="margin-left:0;" :disabled="row.kernelModel || row.abstractModel || !!row.extendModel" @click="handleOfflineModel(row)">停用</el-button>
+            <el-button v-else-if="row.lifecycleState === 'OFFLINE'" link type="success" size="small" style="margin-left:0;" :disabled="row.kernelModel" @click="handleOnlineModel(row)">恢复使用</el-button>
+            <el-button link type="info" size="small" style="margin-left:0;" :disabled="row.abstractModel || !!row.extendModel || !row.activeVersionId" @click="handleBackupModel(row)">备份</el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -47,7 +52,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { rpcCall } from '@/api/rpc';
 import { useAppStore } from '@/stores/app';
 import { lifecycleTagType, friendlyLifecycleLabel } from '@/utils/formatters';
@@ -85,6 +90,59 @@ async function handleBuildDefaultViews(modelName) {
     await appStore.refreshMenusAndOverview();
   } catch (e) {
     ElMessage.error(e.message);
+  }
+}
+
+async function handleOfflineModel(row) {
+  try {
+    await ElMessageBox.confirm(
+      `确认停用数据表「${row.displayName || row.name}」吗？停用后普通业务接口与工作区入口将暂停访问，随时可恢复使用。`,
+      '停用确认',
+      { type: 'warning', confirmButtonText: '确认停用', cancelButtonText: '取消' }
+    );
+    await rpcCall('meta_model', 'offline', { modelName: row.name });
+    ElMessage.success(`数据表 ${row.displayName || row.name} 已停用`);
+    await appStore.refreshMenusAndOverview();
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') {
+      ElMessage.error(e.message || '停用失败');
+    }
+  }
+}
+
+async function handleOnlineModel(row) {
+  try {
+    await rpcCall('meta_model', 'online', { modelName: row.name });
+    ElMessage.success(`数据表 ${row.displayName || row.name} 已恢复使用`);
+    await appStore.refreshMenusAndOverview();
+  } catch (e) {
+    ElMessage.error(e.message || '恢复使用失败');
+  }
+}
+
+async function handleBackupModel(row) {
+  try {
+    const res = await rpcCall('meta_model', 'exportData', { modelName: row.name });
+    const payload = {
+      modelName: res.modelName || row.name,
+      displayName: row.displayName || row.name,
+      exportTicket: res.exportTicket,
+      recordCount: res.recordCount ?? 0,
+      exportedAt: new Date().toISOString(),
+      records: res.records || []
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${row.name}_backup_${Date.now()}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    ElMessage.success(`备份成功：共导出 ${payload.recordCount} 条记录（凭据 ${res.exportTicket}）`);
+  } catch (e) {
+    ElMessage.error(e.message || '数据备份失败');
   }
 }
 
