@@ -144,6 +144,19 @@
             </template>
           </div>
         </template>
+        <div class="lc-side-footer">
+          <button
+            ref="assistantToggle"
+            type="button"
+            class="lc-nav-item lc-assistant-toggle"
+            :class="{ active: assistantOpen }"
+            :aria-expanded="assistantOpen"
+            :aria-controls="assistantOpen ? 'mes-assistant-panel' : undefined"
+            @click="toggleAssistant"
+          >
+            <el-icon aria-hidden="true"><ChatDotRound /></el-icon><span>MES 助手</span>
+          </button>
+        </div>
       </nav>
 
       <div class="lc-workspace">
@@ -161,6 +174,7 @@
           <router-view />
         </main>
       </div>
+      <MesAssistantPanel :open="assistantOpen" @close="closeAssistant" @navigate="assistantOpen = false" />
     </div>
 
     <!-- 全局模型设计器与版本中心弹窗 -->
@@ -193,6 +207,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useAuthStore } from '@/stores/auth';
 import { useAppStore } from '@/stores/app';
+import MesAssistantPanel from '@/components/assistant/MesAssistantPanel.vue';
 import ModelDesignerModal from '@/components/studio/ModelDesignerModal.vue';
 
 const route = useRoute();
@@ -200,6 +215,8 @@ const router = useRouter();
 const authStore = useAuthStore();
 const appStore = useAppStore();
 const sidebarOpen = ref(false);
+const assistantOpen = ref(false);
+const assistantToggle = ref(null);
 const menuToggle = ref(null);
 const navigation = ref(null);
 
@@ -218,6 +235,25 @@ function closeSidebar() {
   if (!sidebarOpen.value) return;
   sidebarOpen.value = false;
   menuToggle.value?.ref?.focus();
+}
+
+function toggleAssistant() {
+  if (assistantOpen.value) {
+    closeAssistant();
+    return;
+  }
+  sidebarOpen.value = false;
+  assistantOpen.value = true;
+}
+
+async function closeAssistant() {
+  assistantOpen.value = false;
+  await nextTick();
+  if (assistantToggle.value?.getClientRects().length) {
+    assistantToggle.value.focus();
+  } else {
+    menuToggle.value?.ref?.focus();
+  }
 }
 
 const changePwdDialog = reactive({
